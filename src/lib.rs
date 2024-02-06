@@ -75,35 +75,46 @@ impl<T: Clone> FieldReuse for Rc<T> {
     }
 }
 
-/*
-rura! {
- enum List {
-    Nil,
-    Cons(i32, List),
- }
+#[cfg(test)]
+mod test {
+    use super::*;
+    /*
+    rura! {
+     enum List {
+        Nil,
+        Cons(i32, List),
+     }
 
- fn add(xs : List, val: i32) -> List {
-    match xs {
-        Nil => Nil,
-        Cons(x, xs) => Cons(x + val, add_one(xs)),
-    }
- }
-}
-*/
-
-#[derive(Clone)]
-enum List {
-    Nil,
-    Cons(i32, Rc<List>),
-}
-
-fn add(xs: Rc<List>, val: i32) -> Rc<List> {
-    match *xs {
-        List::Nil => xs,
-        List::Cons(y, ref ys) => {
-            let new_xs = add(ys.clone(), val);
-            let token = xs.drop_for_reuse();
-            unsafe { Rc::from_token(List::Cons(y + val, new_xs), token) }
+     fn add(xs : List, val: i32) -> List {
+        match xs {
+            Nil => Nil,
+            Cons(x, xs) => Cons(x + val, add_one(xs)),
         }
+     }
+    }
+    */
+
+    #[derive(Clone, Debug)]
+    enum List {
+        Nil,
+        Cons(i32, Rc<List>),
+    }
+
+    fn add(xs: Rc<List>, val: i32) -> Rc<List> {
+        match *xs {
+            List::Nil => xs,
+            List::Cons(y, ref ys) => {
+                let new_xs = add(ys.clone(), val);
+                let token = xs.drop_for_reuse();
+                unsafe { Rc::from_token(List::Cons(y + val, new_xs), token) }
+            }
+        }
+    }
+
+    #[test]
+    fn test() {
+        let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
+        let ys = add(xs, 1);
+        println!("{:?}", ys);
     }
 }

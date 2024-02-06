@@ -84,7 +84,7 @@ rura! {
  fn add(xs : List, val: i32) -> List {
     match xs {
         Nil => Nil,
-        Cons(x, xs) => Cons(x + 1, add_one(xs)),
+        Cons(x, xs) => Cons(x + val, add_one(xs)),
     }
  }
 }
@@ -96,13 +96,13 @@ enum List {
     Cons(i32, Rc<List>),
 }
 
-fn add_one(xs: Rc<List>, val: i32) -> Rc<List> {
+fn add(xs: Rc<List>, val: i32) -> Rc<List> {
     match *xs {
         List::Nil => xs,
         List::Cons(y, ref ys) => {
-            let new_xs = add_one(ys.clone(), val);
+            let new_xs = add(ys.clone(), val);
             let token = xs.drop_for_reuse();
-            unsafe { Rc::from_token(List::Cons(y + 1, new_xs), token) }
+            unsafe { Rc::from_token(List::Cons(y + val, new_xs), token) }
         }
     }
 }

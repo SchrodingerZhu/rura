@@ -14,6 +14,7 @@ impl<T> Unique<T> {
     pub fn new(value: T) -> Self {
         Unique(Rc::new(UnsafeCell::new(value)))
     }
+    // Notice that [`Rc::get_mut`] with [`Option::unwrap_unchecked`] does not generate clean code.
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.0.get() }
     }

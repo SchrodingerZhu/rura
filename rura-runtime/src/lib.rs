@@ -24,7 +24,10 @@ impl<T> Drop for ReuseToken<T> {
     fn drop(&mut self) {
         if let ReuseToken::Valid(ptr, ..) = self {
             unsafe {
-                Rc::from_raw(ptr.as_ref());
+                let rc = Rc::from_raw(ptr.as_ref());
+                if Rc::strong_count(&rc) != 1 || Rc::weak_count(&rc) != 0 {
+                    core::hint::unreachable_unchecked();
+                }
             }
         }
     }

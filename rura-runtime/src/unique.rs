@@ -40,13 +40,12 @@ impl<T> Deref for Unique<T> {
 }
 
 impl<T> MemoryReuse for Unique<T> {
-    type Object = T;
     #[inline(always)]
     fn is_exclusive(&self) -> bool {
         true
     }
 
-    fn drop_for_reuse(self) -> crate::ReuseToken<Self::Object> {
+    fn drop_for_reuse(self) -> crate::ReuseToken<Self::Target> {
         let ptr = Rc::into_raw(self.0) as *mut T;
         unsafe {
             core::ptr::drop_in_place(ptr);
@@ -54,17 +53,17 @@ impl<T> MemoryReuse for Unique<T> {
         }
     }
 
-    unsafe fn from_token<U>(value: Self::Object, token: crate::ReuseToken<U>) -> Self {
+    unsafe fn from_token<U>(value: Self::Target, token: crate::ReuseToken<U>) -> Self {
         Unique(Rc::from_token(UnsafeCell::new(value), token))
     }
 }
 
 impl<T> Exclusivity for Unique<T> {
-    fn make_mut(&mut self) -> &mut Self::Object {
+    fn make_mut(&mut self) -> &mut Self::Target {
         self.get_mut()
     }
 
-    fn uniquefy(self) -> Unique<Self::Object> {
+    fn uniquefy(self) -> Unique<Self::Target> {
         self
     }
 }

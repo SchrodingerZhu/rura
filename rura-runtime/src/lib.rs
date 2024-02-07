@@ -30,21 +30,21 @@ impl<T> Drop for ReuseToken<T> {
     }
 }
 
-pub trait MemoryReuse: Deref<Target = Self::Object> {
-    type Object: Sized;
+pub trait MemoryReuse: Deref {
     fn is_exclusive(&self) -> bool;
     #[must_use]
-    fn drop_for_reuse(self) -> ReuseToken<Self::Object>;
-    unsafe fn from_token<U>(value: Self::Object, token: ReuseToken<U>) -> Self;
+    fn drop_for_reuse(self) -> ReuseToken<Self::Target>
+    where
+        Self::Target: Sized;
+    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self;
 }
 
 impl<T> MemoryReuse for Rc<T> {
-    type Object = T;
     #[inline(always)]
     fn is_exclusive(&self) -> bool {
         Rc::strong_count(self) == 1 && Rc::weak_count(self) == 0
     }
-    fn drop_for_reuse(self) -> ReuseToken<Self::Object> {
+    fn drop_for_reuse(self) -> ReuseToken<Self::Target> {
         if self.is_exclusive() {
             let ptr = Rc::into_raw(self) as *mut T;
             unsafe {
@@ -55,7 +55,7 @@ impl<T> MemoryReuse for Rc<T> {
             ReuseToken::Invalid
         }
     }
-    unsafe fn from_token<U>(value: Self::Object, token: ReuseToken<U>) -> Self {
+    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self {
         debug_assert_eq!(core::mem::size_of::<T>(), token.layout().size());
         debug_assert_eq!(core::mem::align_of::<T>(), token.layout().align());
         match token {
@@ -71,16 +71,16 @@ impl<T> MemoryReuse for Rc<T> {
 }
 
 pub trait Exclusivity: MemoryReuse {
-    fn make_mut(&mut self) -> &mut Self::Object;
-    fn uniquefy(self) -> Unique<Self::Object>;
+    fn make_mut(&mut self) -> &mut Self::Target;
+    fn uniquefy(self) -> Unique<Self::Target>;
 }
 
 impl<T: Clone> Exclusivity for Rc<T> {
-    fn make_mut(&mut self) -> &mut Self::Object {
+    fn make_mut(&mut self) -> &mut Self::Target {
         Rc::make_mut(self)
     }
 
-    fn uniquefy(self) -> Unique<Self::Object> {
+    fn uniquefy(self) -> Unique<Self::Target> {
         self.into()
     }
 }

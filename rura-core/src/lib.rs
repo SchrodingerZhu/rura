@@ -2,16 +2,16 @@ use alloc::rc::Rc;
 use core::{mem::MaybeUninit, ptr::NonNull};
 extern crate alloc;
 
-enum ReuseToken<T> {
+pub enum ReuseToken<T> {
     Invalid,
     Valid(NonNull<MaybeUninit<T>>),
 }
 
 impl<T> ReuseToken<T> {
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         matches!(self, ReuseToken::Valid(..))
     }
-    fn layout(&self) -> core::alloc::Layout {
+    pub fn layout(&self) -> core::alloc::Layout {
         core::alloc::Layout::new::<T>()
     }
 }
@@ -26,7 +26,7 @@ impl<T> Drop for ReuseToken<T> {
     }
 }
 
-trait MemoryReuse {
+pub trait MemoryReuse {
     type Object: Sized;
     fn is_exclusive(&self) -> bool;
     #[must_use]
@@ -37,7 +37,7 @@ trait MemoryReuse {
 impl<T: Sized> MemoryReuse for Rc<T> {
     type Object = T;
     fn is_exclusive(&self) -> bool {
-        Rc::strong_count(&self) == 1 && Rc::weak_count(&self) == 0
+        Rc::strong_count(self) == 1 && Rc::weak_count(self) == 0
     }
     fn drop_for_reuse(self) -> ReuseToken<Self::Object> {
         if self.is_exclusive() {
@@ -65,7 +65,7 @@ impl<T: Sized> MemoryReuse for Rc<T> {
     }
 }
 
-trait FieldReuse: MemoryReuse {
+pub trait FieldReuse: MemoryReuse {
     fn make_mut(&mut self) -> &mut Self::Object;
 }
 

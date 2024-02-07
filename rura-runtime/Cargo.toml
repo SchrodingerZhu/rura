@@ -1,5 +1,5 @@
 [package]
-name = "rura-core"
+name = "rura-runtime"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,11 @@ edition = "2021"
 [dependencies]
 proc-macro2 = { version = "1.0.78", features = ["span-locations"] }
 quote = "1.0.35"
-syn = { version = "2.0.48", features = ["full", "extra-traits", "fold", "visit", "visit-mut"] }
+syn = { version = "2.0.48", features = [
+  "full",
+  "extra-traits",
+  "fold",
+  "visit",
+  "visit-mut",
+] }
 thiserror = "1.0.56"

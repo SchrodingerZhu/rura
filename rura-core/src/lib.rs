@@ -1,3 +1,4 @@
+#![no_std]
 use alloc::rc::Rc;
 use core::{mem::MaybeUninit, ptr::NonNull};
 extern crate alloc;
@@ -77,6 +78,7 @@ impl<T: Clone> FieldReuse for Rc<T> {
 
 #[cfg(test)]
 mod test {
+    extern crate std;
     use super::*;
     /*
     rura! {
@@ -115,6 +117,6 @@ mod test {
     fn test() {
         let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
         let ys = add(xs, 1);
-        println!("{:?}", ys);
+        std::println!("{:?}", ys);
     }
 }

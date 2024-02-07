@@ -1,7 +1,10 @@
 #![no_std]
 use alloc::rc::Rc;
-use core::{mem::MaybeUninit, ptr::NonNull};
+use core::{mem::MaybeUninit, ops::Deref, ptr::NonNull};
+mod unique;
 extern crate alloc;
+
+pub use unique::Unique;
 
 pub enum ReuseToken<T> {
     Invalid,
@@ -27,7 +30,7 @@ impl<T> Drop for ReuseToken<T> {
     }
 }
 
-pub trait MemoryReuse {
+pub trait MemoryReuse: Deref<Target = Self::Object> {
     type Object: Sized;
     fn is_exclusive(&self) -> bool;
     #[must_use]
@@ -35,8 +38,9 @@ pub trait MemoryReuse {
     unsafe fn from_token<U>(value: Self::Object, token: ReuseToken<U>) -> Self;
 }
 
-impl<T: Sized> MemoryReuse for Rc<T> {
+impl<T> MemoryReuse for Rc<T> {
     type Object = T;
+    #[inline(always)]
     fn is_exclusive(&self) -> bool {
         Rc::strong_count(self) == 1 && Rc::weak_count(self) == 0
     }
@@ -66,13 +70,18 @@ impl<T: Sized> MemoryReuse for Rc<T> {
     }
 }
 
-pub trait FieldReuse: MemoryReuse {
+pub trait Exclusivity: MemoryReuse {
     fn make_mut(&mut self) -> &mut Self::Object;
+    fn uniquefy(self) -> Unique<Self::Object>;
 }
 
-impl<T: Clone> FieldReuse for Rc<T> {
+impl<T: Clone> Exclusivity for Rc<T> {
     fn make_mut(&mut self) -> &mut Self::Object {
         Rc::make_mut(self)
+    }
+
+    fn uniquefy(self) -> Unique<Self::Object> {
+        self.into()
     }
 }
 

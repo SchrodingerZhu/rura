@@ -7,7 +7,10 @@ pub trait PartialParams {
     type Full;
     type Progress: PartialParams<Full = Self::Full>;
     fn apply(&mut self, next: Self::Next);
-    unsafe fn transmute(self) -> Self::Full;
+}
+
+pub trait FullParams: PartialParams {
+    fn transmute(self) -> Self::Full;
 }
 
 #[repr(transparent)]
@@ -27,7 +30,10 @@ impl PartialParams for () {
     type Progress = ();
     type Full = ();
     fn apply(&mut self, _: Self::Next) {}
-    unsafe fn transmute(self) -> Self::Full {}
+}
+
+impl FullParams for () {
+    fn transmute(self) -> Self::Full {}
 }
 
 impl<T> PartialParams for (Ready<T>,) {
@@ -35,7 +41,10 @@ impl<T> PartialParams for (Ready<T>,) {
     type Progress = (Ready<T>,);
     type Full = (T,);
     fn apply(&mut self, _: Self::Next) {}
-    unsafe fn transmute(self) -> Self::Full {
+}
+
+impl<T> FullParams for (Ready<T>,) {
+    fn transmute(self) -> Self::Full {
         ((self.0).0,)
     }
 }
@@ -47,9 +56,6 @@ impl<T> PartialParams for (Hole<T>,) {
     fn apply(&mut self, next: Self::Next) {
         self.0 .0.write(next);
     }
-    unsafe fn transmute(self) -> Self::Full {
-        ((self.0).0.assume_init(),)
-    }
 }
 
 impl<A, B> PartialParams for (Ready<A>, Ready<B>) {
@@ -57,7 +63,10 @@ impl<A, B> PartialParams for (Ready<A>, Ready<B>) {
     type Progress = (Ready<A>, Ready<B>);
     type Full = (A, B);
     fn apply(&mut self, _: Self::Next) {}
-    unsafe fn transmute(self) -> Self::Full {
+}
+
+impl<A, B> FullParams for (Ready<A>, Ready<B>) {
+    fn transmute(self) -> Self::Full {
         ((self.0).0, (self.1).0)
     }
 }
@@ -69,9 +78,6 @@ impl<A, B> PartialParams for (Ready<A>, Hole<B>) {
     fn apply(&mut self, next: Self::Next) {
         self.1 .0.write(next);
     }
-    unsafe fn transmute(self) -> Self::Full {
-        ((self.0).0, (self.1).0.assume_init())
-    }
 }
 
 impl<A, B> PartialParams for (Hole<A>, Hole<B>) {
@@ -80,9 +86,6 @@ impl<A, B> PartialParams for (Hole<A>, Hole<B>) {
     type Full = (A, B);
     fn apply(&mut self, next: Self::Next) {
         self.0 .0.write(next);
-    }
-    unsafe fn transmute(self) -> Self::Full {
-        ((self.0).0.assume_init(), (self.1).0.assume_init())
     }
 }
 
@@ -103,9 +106,9 @@ impl<P: PartialParams + Clone, R> Clone for Thunk<P, R> {
 impl<P: PartialParams, R> Thunk<P, R> {
     pub fn eval(self) -> R
     where
-        P: PartialParams<Progress = P>,
+        P: FullParams,
     {
-        (self.code)(unsafe { self.params.transmute() })
+        (self.code)(self.params.transmute())
     }
     pub fn apply(&mut self, x: P::Next) {
         self.params.apply(x);
@@ -130,7 +133,7 @@ impl<P: PartialParams + Clone, R> Closure<P, R> {
     }
     pub fn eval(self) -> R
     where
-        P: PartialParams<Progress = P>,
+        P: FullParams,
     {
         let f = Rc::unwrap_or_clone(self.0);
         f.eval()

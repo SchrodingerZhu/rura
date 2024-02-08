@@ -2,6 +2,8 @@
 
 `rura` has both plain scalar types and memory-managed objects. The overall idea is to keep a similar design as Rust.
 
+`rura` types are always defined with `Clone` trait.
+
 ## Scalar Types
 
 - `bool`

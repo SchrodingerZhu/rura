@@ -1,4 +1,8 @@
-use core::{cell::UnsafeCell, ops::Deref, ptr::NonNull};
+use core::{
+    cell::UnsafeCell,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
 use alloc::rc::Rc;
 
@@ -10,8 +14,11 @@ use crate::{Exclusivity, MemoryReuse, ReuseToken};
 #[repr(transparent)]
 pub struct Unique<T: ?Sized>(Option<Rc<UnsafeCell<T>>>);
 
-impl<T> Unique<T> {
-    pub fn new(value: T) -> Self {
+impl<T: ?Sized> Unique<T> {
+    pub fn new(value: T) -> Self
+    where
+        T: Sized,
+    {
         Unique(Some(Rc::new(UnsafeCell::new(value))))
     }
     // Notice that [`Rc::get_mut`] with [`Option::unwrap_unchecked`] does not generate clean code.
@@ -20,33 +27,46 @@ impl<T> Unique<T> {
     }
 }
 
-impl<T: Clone> From<Rc<T>> for Unique<T> {
+impl<T: ?Sized + Clone> From<Rc<T>> for Unique<T> {
     fn from(mut rc: Rc<T>) -> Self {
         rc.make_mut();
         unsafe { core::mem::transmute(rc) }
     }
 }
 
-impl<T> From<Unique<T>> for Rc<T> {
+impl<T: ?Sized> From<Unique<T>> for Rc<T> {
     fn from(unique: Unique<T>) -> Self {
-        unsafe { core::mem::transmute(unique) }
+        let rc: Rc<T> = unsafe { core::mem::transmute(unique) };
+        if !rc.is_exclusive() {
+            panic!("The unique reference is not exclusive.");
+        }
+        rc
     }
 }
 
-impl<T> Deref for Unique<T> {
+impl<T: ?Sized> Deref for Unique<T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { &*self.0.as_deref().unwrap_unchecked().get() }
     }
 }
 
-impl<T> MemoryReuse for Unique<T> {
+impl<T: ?Sized> DerefMut for Unique<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.get_mut()
+    }
+}
+
+impl<T: ?Sized> MemoryReuse for Unique<T> {
     #[inline(always)]
     fn is_exclusive(&self) -> bool {
         true
     }
 
-    fn drop_for_reuse(mut self) -> crate::ReuseToken<Self::Target> {
+    fn drop_for_reuse(mut self) -> crate::ReuseToken<Self::Target>
+    where
+        T: Sized,
+    {
         let ptr = Rc::into_raw(unsafe { self.0.take().unwrap_unchecked() }) as *mut T;
         core::mem::forget(self);
         unsafe {
@@ -55,12 +75,15 @@ impl<T> MemoryReuse for Unique<T> {
         }
     }
 
-    unsafe fn from_token<U>(value: Self::Target, token: crate::ReuseToken<U>) -> Self {
+    unsafe fn from_token<U>(value: Self::Target, token: crate::ReuseToken<U>) -> Self
+    where
+        T: Sized,
+    {
         Unique(Some(Rc::from_token(UnsafeCell::new(value), token)))
     }
 }
 
-impl<T> Exclusivity for Unique<T> {
+impl<T: ?Sized> Exclusivity for Unique<T> {
     fn make_mut(&mut self) -> &mut Self::Target {
         self.get_mut()
     }
@@ -74,7 +97,7 @@ impl<T: ?Sized> Drop for Unique<T> {
     fn drop(&mut self) {
         unsafe {
             let rc = self.0.take().unwrap_unchecked();
-            if Rc::strong_count(&rc) != 1 || Rc::weak_count(&rc) != 0 {
+            if !rc.is_exclusive() {
                 core::hint::unreachable_unchecked();
             }
         }

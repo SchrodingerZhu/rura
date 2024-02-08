@@ -25,7 +25,7 @@ impl<T> Drop for ReuseToken<T> {
         if let ReuseToken::Valid(ptr, ..) = self {
             unsafe {
                 let rc = Rc::from_raw(ptr.as_ref());
-                if Rc::strong_count(&rc) != 1 || Rc::weak_count(&rc) != 0 {
+                if !rc.is_exclusive() {
                     core::hint::unreachable_unchecked();
                 }
             }
@@ -39,15 +39,20 @@ pub trait MemoryReuse: Deref {
     fn drop_for_reuse(self) -> ReuseToken<Self::Target>
     where
         Self::Target: Sized;
-    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self;
+    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self
+    where
+        Self::Target: Sized;
 }
 
-impl<T> MemoryReuse for Rc<T> {
+impl<T: ?Sized> MemoryReuse for Rc<T> {
     #[inline(always)]
     fn is_exclusive(&self) -> bool {
         Rc::strong_count(self) == 1 && Rc::weak_count(self) == 0
     }
-    fn drop_for_reuse(self) -> ReuseToken<Self::Target> {
+    fn drop_for_reuse(self) -> ReuseToken<Self::Target>
+    where
+        T: Sized,
+    {
         if self.is_exclusive() {
             let ptr = Rc::into_raw(self) as *mut T;
             unsafe {
@@ -58,7 +63,10 @@ impl<T> MemoryReuse for Rc<T> {
             ReuseToken::Invalid
         }
     }
-    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self {
+    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self
+    where
+        T: Sized,
+    {
         debug_assert_eq!(core::mem::size_of::<T>(), token.layout().size());
         debug_assert_eq!(core::mem::align_of::<T>(), token.layout().align());
         match token {
@@ -78,7 +86,7 @@ pub trait Exclusivity: MemoryReuse {
     fn uniquefy(self) -> Unique<Self::Target>;
 }
 
-impl<T: Clone> Exclusivity for Rc<T> {
+impl<T: ?Sized + Clone> Exclusivity for Rc<T> {
     fn make_mut(&mut self) -> &mut Self::Target {
         Rc::make_mut(self)
     }

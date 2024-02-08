@@ -38,7 +38,9 @@ impl<T: ?Sized> From<Unique<T>> for Rc<T> {
     fn from(unique: Unique<T>) -> Self {
         let rc: Rc<T> = unsafe { core::mem::transmute(unique) };
         if !rc.is_exclusive() {
-            panic!("The unique reference is not exclusive.");
+            unsafe {
+                core::hint::unreachable_unchecked();
+            }
         }
         rc
     }

@@ -26,7 +26,7 @@ pub trait PartialParams: Clone {
     type Pending: Params;
     type Full;
     type Progress: PartialParams<Full = Self::Full, Pending = <Self::Pending as Params>::Tail>;
-    fn apply_transmute(self, next: <Self::Pending as Params>::Head) -> Self::Progress;
+    fn apply(&mut self, next: <Self::Pending as Params>::Head);
     unsafe fn transmute_full(self) -> Self::Full;
 }
 
@@ -46,7 +46,7 @@ impl PartialParams for () {
     type Progress = ();
     type Full = ();
     type Pending = ();
-    fn apply_transmute(self, _: ()) -> Self::Progress {}
+    fn apply(&mut self, _: ()) {}
     unsafe fn transmute_full(self) -> Self::Full {}
 }
 
@@ -54,9 +54,7 @@ impl<T: Clone> PartialParams for (Ready<T>,) {
     type Pending = ();
     type Progress = (Ready<T>,);
     type Full = (T,);
-    fn apply_transmute(self, _: ()) -> Self::Progress {
-        (self.0,)
-    }
+    fn apply(&mut self, _: <Self::Pending as Params>::Head) {}
     unsafe fn transmute_full(self) -> Self::Full {
         (self.0 .0,)
     }
@@ -66,8 +64,8 @@ impl<T: Clone> PartialParams for (Hole<T>,) {
     type Pending = (T,);
     type Progress = (Ready<T>,);
     type Full = (T,);
-    fn apply_transmute(self, next: T) -> Self::Progress {
-        (Ready(next),)
+    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
+        self.0 .0.write(next);
     }
     unsafe fn transmute_full(self) -> Self::Full {
         (self.0 .0.assume_init(),)
@@ -78,9 +76,7 @@ impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Ready<B>) {
     type Pending = ();
     type Progress = (Ready<A>, Ready<B>);
     type Full = (A, B);
-    fn apply_transmute(self, _: ()) -> Self::Progress {
-        self
-    }
+    fn apply(&mut self, _: <Self::Pending as Params>::Head) {}
     unsafe fn transmute_full(self) -> Self::Full {
         (self.0 .0, self.1 .0)
     }
@@ -90,8 +86,8 @@ impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Hole<B>) {
     type Pending = (B,);
     type Progress = (Ready<A>, Ready<B>);
     type Full = (A, B);
-    fn apply_transmute(self, next: B) -> Self::Progress {
-        (self.0, Ready(next))
+    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
+        self.1 .0.write(next);
     }
     unsafe fn transmute_full(self) -> Self::Full {
         (self.0 .0, self.1 .0.assume_init())
@@ -102,8 +98,8 @@ impl<A: Clone, B: Clone> PartialParams for (Hole<A>, Hole<B>) {
     type Pending = (A, B);
     type Progress = (Ready<A>, Hole<B>);
     type Full = (A, B);
-    fn apply_transmute(self, next: A) -> Self::Progress {
-        (Ready(next), self.1)
+    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
+        self.0 .0.write(next);
     }
     unsafe fn transmute_full(self) -> Self::Full {
         (self.0 .0.assume_init(), self.1 .0.assume_init())
@@ -133,15 +129,13 @@ pub trait BoxedClosure<P: Params, R> {
 
 impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R> for Thunk<P, R> {
     fn apply(
-        self: Rc<Self>,
+        mut self: Rc<Self>,
         param: <P::Pending as Params>::Head,
     ) -> Rc<dyn BoxedClosure<<P::Pending as Params>::Tail, R>> {
-        let thunk = Rc::unwrap_or_clone(self);
-        let progress = thunk.params.apply_transmute(param);
-        Rc::new(Thunk {
-            code: thunk.code,
-            params: progress,
-        })
+        let thunk = Rc::make_mut(&mut self);
+        thunk.params.apply(param);
+        let raw = Rc::into_raw(self);
+        unsafe { Rc::from_raw(raw as *const Thunk<P::Progress, R>) }
     }
 
     fn eval(self: Rc<Self>) -> R
@@ -159,8 +153,8 @@ pub type Closure<P, R> = Rc<dyn BoxedClosure<P, R>>;
 mod test {
     use super::*;
 
-    fn test_closure(f: Closure<(i32, i32), i32>, x: i32) -> Closure<(i32,), i32> {
-        f.apply(x)
+    fn test_closure(f: Closure<(i32, i32), i32>, x: i32, y: i32) -> Closure<(), i32> {
+        f.apply(x).apply(y)
     }
 
     #[test]
@@ -169,7 +163,7 @@ mod test {
             code: |(x, y)| x + y,
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
         });
-        let g = test_closure(f, 1);
-        assert_eq!(g.apply(2).eval(), 3);
+        let g = test_closure(f, 1, 2);
+        assert_eq!(g.eval(), 3);
     }
 }

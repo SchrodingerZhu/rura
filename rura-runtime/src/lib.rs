@@ -1,10 +1,27 @@
 #![no_std]
+#![cfg_attr(feature = "nightly", feature(hint_assert_unchecked))]
 use alloc::rc::Rc;
 use core::{mem::MaybeUninit, ops::Deref, ptr::NonNull};
+mod closure;
 mod unique;
 extern crate alloc;
 
+pub use closure::*;
 pub use unique::Unique;
+
+#[inline(always)]
+fn assert_unchecked(x: bool) {
+    #[cfg(feature = "nightly")]
+    unsafe {
+        core::hint::assert_unchecked(x);
+    }
+    #[cfg(not(feature = "nightly"))]
+    unsafe {
+        if !x {
+            core::hint::unreachable_unchecked();
+        }
+    }
+}
 
 pub enum ReuseToken<T> {
     Invalid,
@@ -25,9 +42,7 @@ impl<T> Drop for ReuseToken<T> {
         if let ReuseToken::Valid(ptr, ..) = self {
             unsafe {
                 let rc = Rc::from_raw(ptr.as_ref());
-                if !rc.is_exclusive() {
-                    core::hint::unreachable_unchecked();
-                }
+                crate::assert_unchecked(rc.is_exclusive());
             }
         }
     }

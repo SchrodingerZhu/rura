@@ -36,13 +36,11 @@ impl<T: ?Sized + Clone> From<Rc<T>> for Unique<T> {
 
 impl<T: ?Sized> From<Unique<T>> for Rc<T> {
     fn from(unique: Unique<T>) -> Self {
-        let rc: Rc<T> = unsafe { core::mem::transmute(unique) };
-        if !rc.is_exclusive() {
-            unsafe {
-                core::hint::unreachable_unchecked();
-            }
+        unsafe {
+            let rc: Rc<T> = core::mem::transmute(unique);
+            crate::assert_unchecked(rc.is_exclusive());
+            rc
         }
-        rc
     }
 }
 
@@ -99,9 +97,7 @@ impl<T: ?Sized> Drop for Unique<T> {
     fn drop(&mut self) {
         unsafe {
             let rc = self.0.take().unwrap_unchecked();
-            if !rc.is_exclusive() {
-                core::hint::unreachable_unchecked();
-            }
+            crate::assert_unchecked(rc.is_exclusive());
         }
     }
 }

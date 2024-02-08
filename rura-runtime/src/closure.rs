@@ -213,6 +213,14 @@ mod test {
         f.apply(x).apply(y)
     }
 
+    fn test_closure2(
+        f: Rc<impl StaticClosure<(i32, i32), i32>>,
+        x: i32,
+        y: i32,
+    ) -> Rc<impl StaticClosure<(), i32>> {
+        f.static_apply(x).static_apply(y)
+    }
+
     #[test]
     fn test() {
         let f = Closure(Rc::new(Thunk {
@@ -229,7 +237,8 @@ mod test {
             code: |(x, y)| x + y,
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
         });
-        assert_eq!(f.static_apply(13).static_apply(23).eval(), 36);
+        assert_eq!(f.clone().static_apply(13).static_apply(23).eval(), 36);
+        assert_eq!(test_closure2(f, 13, 23).eval(), 36);
     }
 
     #[cfg(feature = "nightly")]

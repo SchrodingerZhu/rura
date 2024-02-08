@@ -206,10 +206,13 @@ mod test {
     #[cfg(feature = "nightly")]
     #[test]
     fn test_nightly() {
+        use alloc::format;
+        use alloc::string::String;
+
         let f = Closure(Rc::new(Thunk {
-            code: |(x, y)| x + y,
+            code: |(x, y): (i32, Rc<String>)| format!("x: {x}, y : {y}"),
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
         }));
-        assert_eq!(f(1)(2)(), 3)
+        assert_eq!(f(1)(String::from("1234").into())(), "x: 1, y : 1234")
     }
 }

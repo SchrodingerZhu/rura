@@ -129,6 +129,10 @@ pub trait BoxedClosure<P: Params, R> {
         P: Params<Head = ()>;
 }
 
+pub trait StaticClosure<P: Params, R>: BoxedClosure<P, R> {
+    fn static_apply(self: Rc<Self>, param: P::Head) -> Rc<impl StaticClosure<P::Tail, R>>;
+}
+
 impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R> for Thunk<P, R> {
     fn apply(
         mut self: Rc<Self>,
@@ -150,6 +154,22 @@ impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R>
     {
         let thunk = Rc::unwrap_or_clone(self);
         unsafe { (thunk.code)(thunk.params.transmute_full()) }
+    }
+}
+
+impl<P: PartialParams + Clone + 'static, R: 'static> StaticClosure<P::Pending, R> for Thunk<P, R> {
+    fn static_apply(
+        mut self: Rc<Self>,
+        param: <P::Pending as Params>::Head,
+    ) -> Rc<impl StaticClosure<<<P as PartialParams>::Pending as Params>::Tail, R>> {
+        let thunk = Rc::make_mut(&mut self);
+        thunk.params.apply(param);
+        let raw = Rc::into_raw(self);
+        unsafe {
+            let rc = Rc::from_raw(raw as *const Thunk<P::Progress, R>);
+            crate::assert_unchecked(rc.is_exclusive());
+            rc
+        }
     }
 }
 
@@ -201,6 +221,15 @@ mod test {
         }));
         let g = test_closure(f, 1, 2);
         assert_eq!(g.eval(), 3);
+    }
+
+    #[test]
+    fn test_static() {
+        let f = Rc::new(Thunk {
+            code: |(x, y)| x + y,
+            params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
+        });
+        assert_eq!(f.static_apply(13).static_apply(23).eval(), 36);
     }
 
     #[cfg(feature = "nightly")]

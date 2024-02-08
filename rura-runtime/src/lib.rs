@@ -1,5 +1,8 @@
 #![no_std]
-#![cfg_attr(feature = "nightly", feature(hint_assert_unchecked))]
+#![cfg_attr(
+    any(feature = "nightly", test),
+    feature(hint_assert_unchecked, fn_traits, unboxed_closures)
+)]
 use alloc::rc::Rc;
 use core::{mem::MaybeUninit, ops::Deref, ptr::NonNull};
 mod closure;

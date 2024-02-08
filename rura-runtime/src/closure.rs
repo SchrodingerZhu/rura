@@ -153,7 +153,37 @@ impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R>
     }
 }
 
-pub type Closure<P, R> = Rc<dyn BoxedClosure<P, R>>;
+#[repr(transparent)]
+pub struct Closure<P, R>(Rc<dyn BoxedClosure<P, R>>);
+
+impl<P: Params, R> Closure<P, R> {
+    pub fn apply(self, param: P::Head) -> Closure<P::Tail, R> {
+        Closure(self.0.apply(param))
+    }
+
+    pub fn eval(self) -> R
+    where
+        P: Params<Head = ()>,
+    {
+        self.0.eval()
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<P: Params, R> FnOnce<(P::Head,)> for Closure<P, R> {
+    type Output = Closure<P::Tail, R>;
+    extern "rust-call" fn call_once(self, x: (P::Head,)) -> Self::Output {
+        self.apply(x.0)
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<P: Params<Head = ()>, R> FnOnce<()> for Closure<P, R> {
+    type Output = R;
+    extern "rust-call" fn call_once(self, _: ()) -> Self::Output {
+        self.eval()
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -165,11 +195,21 @@ mod test {
 
     #[test]
     fn test() {
-        let f = Rc::new(Thunk {
+        let f = Closure(Rc::new(Thunk {
             code: |(x, y)| x + y,
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
-        });
+        }));
         let g = test_closure(f, 1, 2);
         assert_eq!(g.eval(), 3);
+    }
+
+    #[cfg(feature = "nightly")]
+    #[test]
+    fn test_nightly() {
+        let f = Closure(Rc::new(Thunk {
+            code: |(x, y)| x + y,
+            params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
+        }));
+        assert_eq!(f(1)(2)(), 3)
     }
 }

@@ -2,15 +2,32 @@ use core::mem::MaybeUninit;
 
 use alloc::rc::Rc;
 
-pub trait PartialParams {
-    type Next;
-    type Full;
-    type Progress: PartialParams<Full = Self::Full>;
-    fn apply(&mut self, next: Self::Next);
+pub trait Params {
+    type Head;
+    type Tail: Params;
 }
 
-pub trait FullParams: PartialParams {
-    fn transmute(self) -> Self::Full;
+impl Params for () {
+    type Head = ();
+    type Tail = ();
+}
+
+impl<A> Params for (A,) {
+    type Head = A;
+    type Tail = ();
+}
+
+impl<A, B> Params for (A, B) {
+    type Head = A;
+    type Tail = (B,);
+}
+
+pub trait PartialParams: Clone {
+    type Pending: Params;
+    type Full;
+    type Progress: PartialParams<Full = Self::Full, Pending = <Self::Pending as Params>::Tail>;
+    fn apply_transmute(self, next: <Self::Pending as Params>::Head) -> Self::Progress;
+    unsafe fn transmute_full(self) -> Self::Full;
 }
 
 #[repr(transparent)]
@@ -26,70 +43,74 @@ impl<T> Clone for Hole<T> {
 pub struct Ready<T>(T);
 
 impl PartialParams for () {
-    type Next = ();
     type Progress = ();
     type Full = ();
-    fn apply(&mut self, _: Self::Next) {}
+    type Pending = ();
+    fn apply_transmute(self, _: ()) -> Self::Progress {}
+    unsafe fn transmute_full(self) -> Self::Full {}
 }
 
-impl FullParams for () {
-    fn transmute(self) -> Self::Full {}
-}
-
-impl<T> PartialParams for (Ready<T>,) {
-    type Next = ();
+impl<T: Clone> PartialParams for (Ready<T>,) {
+    type Pending = ();
     type Progress = (Ready<T>,);
     type Full = (T,);
-    fn apply(&mut self, _: Self::Next) {}
-}
-
-impl<T> FullParams for (Ready<T>,) {
-    fn transmute(self) -> Self::Full {
-        ((self.0).0,)
+    fn apply_transmute(self, _: ()) -> Self::Progress {
+        (self.0,)
+    }
+    unsafe fn transmute_full(self) -> Self::Full {
+        (self.0 .0,)
     }
 }
 
-impl<T> PartialParams for (Hole<T>,) {
-    type Next = T;
+impl<T: Clone> PartialParams for (Hole<T>,) {
+    type Pending = (T,);
     type Progress = (Ready<T>,);
     type Full = (T,);
-    fn apply(&mut self, next: Self::Next) {
-        self.0 .0.write(next);
+    fn apply_transmute(self, next: T) -> Self::Progress {
+        (Ready(next),)
+    }
+    unsafe fn transmute_full(self) -> Self::Full {
+        (self.0 .0.assume_init(),)
     }
 }
 
-impl<A, B> PartialParams for (Ready<A>, Ready<B>) {
-    type Next = ();
+impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Ready<B>) {
+    type Pending = ();
     type Progress = (Ready<A>, Ready<B>);
     type Full = (A, B);
-    fn apply(&mut self, _: Self::Next) {}
-}
-
-impl<A, B> FullParams for (Ready<A>, Ready<B>) {
-    fn transmute(self) -> Self::Full {
-        ((self.0).0, (self.1).0)
+    fn apply_transmute(self, _: ()) -> Self::Progress {
+        self
+    }
+    unsafe fn transmute_full(self) -> Self::Full {
+        (self.0 .0, self.1 .0)
     }
 }
 
-impl<A, B> PartialParams for (Ready<A>, Hole<B>) {
-    type Next = B;
+impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Hole<B>) {
+    type Pending = (B,);
     type Progress = (Ready<A>, Ready<B>);
     type Full = (A, B);
-    fn apply(&mut self, next: Self::Next) {
-        self.1 .0.write(next);
+    fn apply_transmute(self, next: B) -> Self::Progress {
+        (self.0, Ready(next))
+    }
+    unsafe fn transmute_full(self) -> Self::Full {
+        (self.0 .0, self.1 .0.assume_init())
     }
 }
 
-impl<A, B> PartialParams for (Hole<A>, Hole<B>) {
-    type Next = A;
+impl<A: Clone, B: Clone> PartialParams for (Hole<A>, Hole<B>) {
+    type Pending = (A, B);
     type Progress = (Ready<A>, Hole<B>);
     type Full = (A, B);
-    fn apply(&mut self, next: Self::Next) {
-        self.0 .0.write(next);
+    fn apply_transmute(self, next: A) -> Self::Progress {
+        (Ready(next), self.1)
+    }
+    unsafe fn transmute_full(self) -> Self::Full {
+        (self.0 .0.assume_init(), self.1 .0.assume_init())
     }
 }
 
-struct Thunk<P: PartialParams, R> {
+pub struct Thunk<P: PartialParams, R> {
     code: fn(P::Full) -> R,
     params: P,
 }
@@ -103,53 +124,52 @@ impl<P: PartialParams + Clone, R> Clone for Thunk<P, R> {
     }
 }
 
-impl<P: PartialParams, R> Thunk<P, R> {
-    pub fn eval(self) -> R
+pub trait BoxedClosure<P: Params, R> {
+    fn apply(self: Rc<Self>, param: P::Head) -> Rc<dyn BoxedClosure<P::Tail, R>>;
+    fn eval(self: Rc<Self>) -> R
     where
-        P: FullParams,
-    {
-        (self.code)(self.params.transmute())
-    }
-    pub fn apply(&mut self, x: P::Next) {
-        self.params.apply(x);
-    }
+        P: Params<Head = ()>;
 }
 
-#[repr(transparent)]
-pub struct Closure<P: PartialParams, R>(Rc<Thunk<P, R>>);
-
-impl<P: PartialParams + Clone, R> Clone for Closure<P, R> {
-    fn clone(&self) -> Self {
-        Closure(self.0.clone())
+impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R> for Thunk<P, R> {
+    fn apply(
+        self: Rc<Self>,
+        param: <P::Pending as Params>::Head,
+    ) -> Rc<dyn BoxedClosure<<P::Pending as Params>::Tail, R>> {
+        let thunk = Rc::unwrap_or_clone(self);
+        let progress = thunk.params.apply_transmute(param);
+        Rc::new(Thunk {
+            code: thunk.code,
+            params: progress,
+        })
     }
-}
 
-impl<P: PartialParams + Clone, R> Closure<P, R> {
-    pub fn apply(mut self, x: P::Next) -> Closure<P::Progress, R> {
-        unsafe {
-            Rc::make_mut(&mut self.0).apply(x);
-            core::mem::transmute(self)
-        }
-    }
-    pub fn eval(self) -> R
+    fn eval(self: Rc<Self>) -> R
     where
-        P: FullParams,
+        P::Pending: Params<Head = ()>,
     {
-        let f = Rc::unwrap_or_clone(self.0);
-        f.eval()
+        let thunk = Rc::unwrap_or_clone(self);
+        unsafe { (thunk.code)(thunk.params.transmute_full()) }
     }
 }
+
+pub type Closure<P, R> = Rc<dyn BoxedClosure<P, R>>;
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    fn test_closure(f: Closure<(i32, i32), i32>, x: i32) -> Closure<(i32,), i32> {
+        f.apply(x)
+    }
+
     #[test]
-    fn test_closure() {
-        let f = Closure(Rc::new(Thunk {
-            code: |(a, b)| a + b,
+    fn test() {
+        let f = Rc::new(Thunk {
+            code: |(x, y)| x + y,
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
-        }));
-        assert_eq!(f.apply(1).apply(2).eval(), 3);
+        });
+        let g = test_closure(f, 1);
+        assert_eq!(g.apply(2).eval(), 3);
     }
 }

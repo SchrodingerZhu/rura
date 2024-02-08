@@ -90,7 +90,7 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
                 core::mem::forget(token);
                 let mut ptr = ptr.cast::<MaybeUninit<T>>();
                 ptr.as_mut().write(value);
-                Rc::from_raw(ptr.as_ref().assume_init_ref())
+                Rc::from_raw(ptr.as_ptr().cast())
             },
         }
     }

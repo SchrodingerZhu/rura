@@ -2,6 +2,8 @@ use core::mem::MaybeUninit;
 
 use alloc::rc::Rc;
 
+use crate::MemoryReuse;
+
 pub trait Params {
     type Head;
     type Tail: Params;
@@ -135,7 +137,11 @@ impl<P: PartialParams + Clone + 'static, R: 'static> BoxedClosure<P::Pending, R>
         let thunk = Rc::make_mut(&mut self);
         thunk.params.apply(param);
         let raw = Rc::into_raw(self);
-        unsafe { Rc::from_raw(raw as *const Thunk<P::Progress, R>) }
+        unsafe {
+            let rc = Rc::from_raw(raw as *const Thunk<P::Progress, R>);
+            crate::assert_unchecked(rc.is_exclusive());
+            rc
+        }
     }
 
     fn eval(self: Rc<Self>) -> R

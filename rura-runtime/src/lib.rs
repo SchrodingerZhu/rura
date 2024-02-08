@@ -10,7 +10,7 @@ pub use closure::*;
 pub use unique::Unique;
 
 #[inline(always)]
-fn assert_unchecked(x: bool) {
+unsafe fn assert_unchecked(x: bool) {
     #[cfg(feature = "nightly")]
     unsafe {
         core::hint::assert_unchecked(x);

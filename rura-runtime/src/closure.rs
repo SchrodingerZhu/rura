@@ -121,7 +121,6 @@ impl<P: PartialParams + Clone, R> Clone for Thunk<P, R> {
         }
     }
 }
-
 pub trait BoxedClosure<P: Params, R> {
     fn apply(self: Rc<Self>, param: P::Head) -> Rc<dyn BoxedClosure<P::Tail, R>>;
     fn eval(self: Rc<Self>) -> R
@@ -278,6 +277,13 @@ impl<R> ErasedThunk<R> {
         self
     }
 
+    pub fn apply_cloure<P: Params, T>(mut self: Rc<Self>, arg: Closure<P, T>) -> Rc<Self> {
+        self.make_mut()
+            .boxed
+            .push(BoxedPack::Object(unsafe { core::mem::transmute(arg) }));
+        self
+    }
+
     pub fn eval(self: Rc<Self>) -> R {
         let thunk = Rc::unwrap_or_clone(self);
         (thunk.code)(thunk.scalar, thunk.boxed)
@@ -287,6 +293,29 @@ impl<R> ErasedThunk<R> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_erased_closure_push_closure() {
+        let f = ErasedThunk::new(|scalar, objects| {
+            let a = unsafe { scalar[0].i32 };
+            let b = unsafe { scalar[1].i32 };
+            let mut objects = objects.into_iter();
+            let Some(BoxedPack::Object(obj)) = objects.next() else {
+                unreachable!()
+            };
+            let obj: Closure<(i32, i32), i32> = unsafe { core::mem::transmute(obj) };
+            obj.apply(a).apply(b).eval()
+        });
+        f.clone().apply_scalar(ScalarPack { i32: 1 });
+        let g = f
+            .apply_scalar(ScalarPack { i32: 1 })
+            .apply_scalar(ScalarPack { i32: 2 })
+            .apply_cloure(Closure(Rc::new(Thunk {
+                code: |(x, y): (i32, i32)| x + y,
+                params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
+            })));
+        assert_eq!(g.eval(), 3);
+    }
 
     fn test_closure(f: Closure<(i32, i32), i32>, x: i32, y: i32) -> Closure<(), i32> {
         f.apply(x).apply(y)

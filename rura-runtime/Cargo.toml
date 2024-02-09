@@ -8,3 +8,4 @@ edition = "2021"
 [features]
 nightly = []
 [dependencies]
+rura-internal-macros = { path = "../rura-internal-macros" }

@@ -9,20 +9,7 @@ pub trait Params {
     type Tail: Params;
 }
 
-impl Params for () {
-    type Head = ();
-    type Tail = ();
-}
-
-impl<A> Params for (A,) {
-    type Head = A;
-    type Tail = ();
-}
-
-impl<A, B> Params for (A, B) {
-    type Head = A;
-    type Tail = (B,);
-}
+rura_internal_macros::impl_parameters!();
 
 pub trait PartialParams: Clone {
     type Pending: Params;
@@ -44,69 +31,8 @@ impl<T> Clone for Hole<T> {
 #[derive(Clone)]
 pub struct Ready<T>(T);
 
-impl PartialParams for () {
-    type Progress = ();
-    type Full = ();
-    type Pending = ();
-    fn apply(&mut self, _: ()) {}
-    unsafe fn transmute_full(self) -> Self::Full {}
-}
-
-impl<T: Clone> PartialParams for (Ready<T>,) {
-    type Pending = ();
-    type Progress = (Ready<T>,);
-    type Full = (T,);
-    fn apply(&mut self, _: <Self::Pending as Params>::Head) {}
-    unsafe fn transmute_full(self) -> Self::Full {
-        (self.0 .0,)
-    }
-}
-
-impl<T: Clone> PartialParams for (Hole<T>,) {
-    type Pending = (T,);
-    type Progress = (Ready<T>,);
-    type Full = (T,);
-    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
-        self.0 .0.write(next);
-    }
-    unsafe fn transmute_full(self) -> Self::Full {
-        (self.0 .0.assume_init(),)
-    }
-}
-
-impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Ready<B>) {
-    type Pending = ();
-    type Progress = (Ready<A>, Ready<B>);
-    type Full = (A, B);
-    fn apply(&mut self, _: <Self::Pending as Params>::Head) {}
-    unsafe fn transmute_full(self) -> Self::Full {
-        (self.0 .0, self.1 .0)
-    }
-}
-
-impl<A: Clone, B: Clone> PartialParams for (Ready<A>, Hole<B>) {
-    type Pending = (B,);
-    type Progress = (Ready<A>, Ready<B>);
-    type Full = (A, B);
-    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
-        self.1 .0.write(next);
-    }
-    unsafe fn transmute_full(self) -> Self::Full {
-        (self.0 .0, self.1 .0.assume_init())
-    }
-}
-
-impl<A: Clone, B: Clone> PartialParams for (Hole<A>, Hole<B>) {
-    type Pending = (A, B);
-    type Progress = (Ready<A>, Hole<B>);
-    type Full = (A, B);
-    fn apply(&mut self, next: <Self::Pending as Params>::Head) {
-        self.0 .0.write(next);
-    }
-    unsafe fn transmute_full(self) -> Self::Full {
-        (self.0 .0.assume_init(), self.1 .0.assume_init())
-    }
-}
+rura_internal_macros::generate_all_partial_param_impls!();
+rura_internal_macros::generate_from_impls!();
 
 pub struct Thunk<P: PartialParams, R> {
     code: fn(P::Full) -> R,
@@ -174,6 +100,12 @@ impl<P: PartialParams + Clone + 'static, R: 'static> StaticClosure<P::Pending, R
 
 #[repr(transparent)]
 pub struct Closure<P, R>(Rc<dyn BoxedClosure<P, R>>);
+
+impl<P, R> Clone for Closure<P, R> {
+    fn clone(&self) -> Self {
+        Closure(self.0.clone())
+    }
+}
 
 impl<P: Params, R> Closure<P, R> {
     pub fn apply(self, param: P::Head) -> Closure<P::Tail, R> {
@@ -362,5 +294,16 @@ mod test {
             params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
         }));
         assert_eq!(f(1)(String::from("1234").into())(), "x: 1, y : 1234")
+    }
+
+    #[test]
+    fn test_long_tuple() {
+        let f: fn((i32, i32, i32, i32, i32, i32)) -> i32 =
+            |(a, b, c, d, e, f): (i32, i32, i32, i32, i32, i32)| a + b + c + d + e + f;
+        let f = Closure::from(f);
+        let g = f.apply(1).apply(2).apply(3);
+        let h = g.clone();
+        assert_eq!(g.apply(2).apply(2).apply(3).eval(), 13);
+        assert_eq!(h.apply(4).apply(5).apply(6).eval(), 21);
     }
 }

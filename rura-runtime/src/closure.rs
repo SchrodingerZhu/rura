@@ -280,6 +280,7 @@ impl<R> ErasedThunk<R> {
     pub fn apply_cloure<P: Params, T>(mut self: Rc<Self>, arg: Closure<P, T>) -> Rc<Self> {
         self.make_mut()
             .boxed
+            // this is extremely dirty but miri does seem to be happy with it
             .push(BoxedPack::Object(unsafe { core::mem::transmute(arg) }));
         self
     }
@@ -314,7 +315,8 @@ mod test {
                 code: |(x, y): (i32, i32)| x + y,
                 params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
             })));
-        assert_eq!(g.eval(), 3);
+        let h = g.clone();
+        assert_eq!(h.eval(), 3);
     }
 
     fn test_closure(f: Closure<(i32, i32), i32>, x: i32, y: i32) -> Closure<(), i32> {

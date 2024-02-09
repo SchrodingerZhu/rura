@@ -1,9 +1,6 @@
-use core::{
-    any::Any,
-    mem::{ManuallyDrop, MaybeUninit},
-};
+use core::{any::Any, mem::MaybeUninit};
 
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{rc::Rc, vec::Vec};
 
 use crate::{Exclusivity, MemoryReuse};
 
@@ -209,60 +206,81 @@ impl<P: Params<Head = ()>, R> FnOnce<()> for Closure<P, R> {
 }
 
 #[repr(C)]
-pub union ArgPacket {
-    scalar: usize,
-    pointer: *const (),
-    boxed_dyn: ManuallyDrop<Box<Rc<dyn Any>>>,
-    boxed_scalar: ManuallyDrop<Box<i128>>,
+pub union ScalarPack {
+    i8: i8,
+    i16: i16,
+    i32: i32,
+    i64: i64,
+    u8: u8,
+    u16: u16,
+    u32: u32,
+    u64: u64,
+    f32: f32,
+    f64: f64,
+    usize: usize,
 }
 
-impl Clone for ArgPacket {
+#[derive(Clone)]
+pub enum BoxedPack {
+    U128(u128),
+    I128(i128),
+    Object(Rc<dyn Any>),
+}
+
+impl Clone for ScalarPack {
     fn clone(&self) -> Self {
         unsafe { core::ptr::read(self) }
     }
 }
 
 pub struct ErasedThunk<R> {
-    code: fn(alloc::vec::Vec<ArgPacket>) -> R,
-    params: alloc::vec::Vec<ArgPacket>,
+    code: fn(Vec<ScalarPack>, Vec<BoxedPack>) -> R,
+    scalar: Vec<ScalarPack>,
+    boxed: Vec<BoxedPack>,
 }
 
 impl<R> Clone for ErasedThunk<R> {
     fn clone(&self) -> Self {
         ErasedThunk {
             code: self.code,
-            params: self.params.clone(),
+            scalar: self.scalar.clone(),
+            boxed: self.boxed.clone(),
         }
     }
 }
 
 impl<R> ErasedThunk<R> {
-    pub fn new(fn_ptr: fn(alloc::vec::Vec<ArgPacket>) -> R) -> Rc<Self> {
+    pub fn new(fn_ptr: fn(Vec<ScalarPack>, Vec<BoxedPack>) -> R) -> Rc<Self> {
         Rc::new(ErasedThunk {
             code: fn_ptr,
-            params: alloc::vec::Vec::new(),
+            scalar: Vec::new(),
+            boxed: Vec::new(),
         })
     }
-    // TODO: fix arg encoding
-    pub fn apply<T: Sized>(mut self: Rc<Self>, arg: T) -> Rc<Self> {
-        let v = self.make_mut();
-        match core::mem::size_of::<T>() {
-            0 => (),
-            s if s <= core::mem::size_of::<ArgPacket>()
-                && core::mem::align_of::<T>() <= core::mem::align_of::<ArgPacket>() =>
-            {
-                v.params.push(unsafe { core::mem::transmute_copy(&arg) })
-            }
-            _ => {
-                let boxed = Box::new(arg);
-                v.params.push(unsafe { core::mem::transmute_copy(&boxed) });
-            }
-        }
+
+    pub fn apply_scalar(mut self: Rc<Self>, arg: ScalarPack) -> Rc<Self> {
+        self.make_mut().scalar.push(arg);
         self
     }
+
+    pub fn apply_i128(mut self: Rc<Self>, arg: i128) -> Rc<Self> {
+        self.make_mut().boxed.push(BoxedPack::I128(arg));
+        self
+    }
+
+    pub fn apply_u128(mut self: Rc<Self>, arg: u128) -> Rc<Self> {
+        self.make_mut().boxed.push(BoxedPack::U128(arg));
+        self
+    }
+
+    pub fn apply_object<T: 'static>(mut self: Rc<Self>, arg: Rc<T>) -> Rc<Self> {
+        self.make_mut().boxed.push(BoxedPack::Object(arg));
+        self
+    }
+
     pub fn eval(self: Rc<Self>) -> R {
         let thunk = Rc::unwrap_or_clone(self);
-        (thunk.code)(thunk.params.clone())
+        (thunk.code)(thunk.scalar, thunk.boxed)
     }
 }
 

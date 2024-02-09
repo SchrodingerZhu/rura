@@ -1,8 +1,11 @@
-use core::mem::MaybeUninit;
+use core::{
+    any::Any,
+    mem::{ManuallyDrop, MaybeUninit},
+};
 
-use alloc::rc::Rc;
+use alloc::{boxed::Box, rc::Rc};
 
-use crate::MemoryReuse;
+use crate::{Exclusivity, MemoryReuse};
 
 pub trait Params {
     type Head;
@@ -202,6 +205,64 @@ impl<P: Params<Head = ()>, R> FnOnce<()> for Closure<P, R> {
     type Output = R;
     extern "rust-call" fn call_once(self, _: ()) -> Self::Output {
         self.eval()
+    }
+}
+
+#[repr(C)]
+pub union ArgPacket {
+    scalar: usize,
+    pointer: *const (),
+    boxed_dyn: ManuallyDrop<Box<Rc<dyn Any>>>,
+    boxed_scalar: ManuallyDrop<Box<i128>>,
+}
+
+impl Clone for ArgPacket {
+    fn clone(&self) -> Self {
+        unsafe { core::ptr::read(self) }
+    }
+}
+
+pub struct ErasedThunk<R> {
+    code: fn(alloc::vec::Vec<ArgPacket>) -> R,
+    params: alloc::vec::Vec<ArgPacket>,
+}
+
+impl<R> Clone for ErasedThunk<R> {
+    fn clone(&self) -> Self {
+        ErasedThunk {
+            code: self.code,
+            params: self.params.clone(),
+        }
+    }
+}
+
+impl<R> ErasedThunk<R> {
+    pub fn new(fn_ptr: fn(alloc::vec::Vec<ArgPacket>) -> R) -> Rc<Self> {
+        Rc::new(ErasedThunk {
+            code: fn_ptr,
+            params: alloc::vec::Vec::new(),
+        })
+    }
+    // TODO: fix arg encoding
+    pub fn apply<T: Sized>(mut self: Rc<Self>, arg: T) -> Rc<Self> {
+        let v = self.make_mut();
+        match core::mem::size_of::<T>() {
+            0 => (),
+            s if s <= core::mem::size_of::<ArgPacket>()
+                && core::mem::align_of::<T>() <= core::mem::align_of::<ArgPacket>() =>
+            {
+                v.params.push(unsafe { core::mem::transmute_copy(&arg) })
+            }
+            _ => {
+                let boxed = Box::new(arg);
+                v.params.push(unsafe { core::mem::transmute_copy(&boxed) });
+            }
+        }
+        self
+    }
+    pub fn eval(self: Rc<Self>) -> R {
+        let thunk = Rc::unwrap_or_clone(self);
+        (thunk.code)(thunk.params.clone())
     }
 }
 

@@ -39,4 +39,5 @@ In Koka and Lean, Reuse Analysis is supported by a lightweight runtime with RC a
 3. [Ownership Model](docs/ownership.md)
 4. [Linearity/Exclusivity](docs/exclusivity.md)
 5. [Closures](docs/closures.md)
+6. [Lowering](docs/lowering.md)
 

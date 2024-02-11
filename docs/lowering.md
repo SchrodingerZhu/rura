@@ -4,6 +4,12 @@ This document decribes the lower-level IR of `rura` and how it is lowered into R
 
 ## Basic Arithmetic
 
+**TODO**: Support wrapping/saturating arithmetic.
+
+
+## Eliminators
+
+
 ## Function Calls
 
 ## Object Management

@@ -1,14 +1,45 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+mod lir;
+
+use syn::Ident;
+
+pub struct QualifiedName {
+    pub module: Vec<Ident>,
+    pub name: Ident,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub enum ScalarType {
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
+    Bool,
+    Char,
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub struct Constructor {
+    pub name: Ident,
+    pub args: Vec<RuraType>,
+}
+pub struct InductiveType {
+    pub name: Ident,
+    pub constructors: Vec<Constructor>,
+}
+
+pub struct ClosureType {
+    pub args: Vec<RuraType>,
+    pub ret: Box<RuraType>,
+}
+
+pub enum RuraType {
+    Scalar(ScalarType),
+    Unit,
+    Bottom,
+    Inductive(InductiveType),
+    Closure(ClosureType),
 }

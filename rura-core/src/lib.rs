@@ -1,4 +1,4 @@
-mod lir;
+pub mod lir;
 
 use syn::Ident;
 
@@ -42,4 +42,5 @@ pub enum RuraType {
     Bottom,
     Inductive(InductiveType),
     Closure(ClosureType),
+    Tuple(Vec<RuraType>),
 }

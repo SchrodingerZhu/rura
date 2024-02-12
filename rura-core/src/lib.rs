@@ -94,6 +94,13 @@ impl TryFrom<&'_ RuraType> for Shape {
             RuraType::Unit => Ok(Shape::Unit),
             RuraType::Bottom => Err(()),
             RuraType::Inductive(inductive) => {
+                if inductive
+                    .type_params
+                    .iter()
+                    .any(|t| matches!(t, TypeParam::Pending(_)))
+                {
+                    return Err(());
+                }
                 let mut shapes = inductive
                     .constructors
                     .iter()

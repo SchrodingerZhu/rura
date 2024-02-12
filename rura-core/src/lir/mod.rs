@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn test_drop_lower_to_rust() {
+    fn test_tuple_lower_to_rust() {
         well_formed_lower(Lir::Tuple {
             elements: vec![1, 2],
             result: 3,
@@ -284,5 +284,18 @@ mod tests {
     #[test]
     fn test_return_lower_to_rust() {
         well_formed_lower(Lir::Return { value: 1 });
+    }
+
+    #[test]
+    fn test_drop_lower_to_rust() {
+        well_formed_lower(Lir::Drop {
+            value: 1,
+            token: Some(2),
+        });
+
+        well_formed_lower(Lir::Drop {
+            value: 1,
+            token: None,
+        });
     }
 }

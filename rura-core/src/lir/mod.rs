@@ -199,7 +199,7 @@ impl Lir {
                 let value = variable(*value);
                 let result = variable(*result);
                 quote! {
-                    let #result = &#value;
+                    let #result = &*#value;
                 }
             }
             Lir::Drop { value, token } => {

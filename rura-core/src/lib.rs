@@ -1,6 +1,6 @@
 pub mod lir;
 
-use syn::Ident;
+use syn::{Ident, TypeParam};
 
 pub struct QualifiedName {
     pub module: Vec<Ident>,
@@ -27,7 +27,8 @@ pub struct Constructor {
     pub args: Vec<RuraType>,
 }
 pub struct InductiveType {
-    pub name: Ident,
+    pub name: syn::TypePath,
+    pub type_params: Vec<TypeParam>,
     pub constructors: Vec<Constructor>,
 }
 
@@ -40,7 +41,7 @@ pub enum RuraType {
     Scalar(ScalarType),
     Unit,
     Bottom,
-    Inductive(InductiveType),
+    Inductive(Box<InductiveType>),
     Closure(ClosureType),
     Tuple(Vec<RuraType>),
 }

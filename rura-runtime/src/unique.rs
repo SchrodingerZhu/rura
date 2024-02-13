@@ -63,15 +63,10 @@ impl<T: ?Sized> MemoryReuse for Unique<T> {
         true
     }
 
-    fn drop_for_reuse<U>(mut self) -> crate::ReuseToken<U>
+    fn drop_for_reuse(mut self) -> crate::ReuseToken<T>
     where
         T: Sized,
     {
-        let self_layout: core::alloc::Layout = core::alloc::Layout::new::<T>();
-        let target_layout: core::alloc::Layout = core::alloc::Layout::new::<U>();
-        if self_layout != target_layout {
-            return ReuseToken::Invalid;
-        }
         let ptr = Rc::into_raw(unsafe { self.0.take().unwrap_unchecked() }) as *mut T;
         core::mem::forget(self);
         unsafe {
@@ -80,13 +75,11 @@ impl<T: ?Sized> MemoryReuse for Unique<T> {
         }
     }
 
-    fn from_token(value: Self::Target, token: crate::ReuseToken<Self::Target>) -> Self
+    fn from_token<U: Sized>(value: Self::Target, token: crate::ReuseToken<U>) -> Self
     where
         T: Sized,
     {
-        Unique(Some(Rc::from_token(UnsafeCell::new(value), unsafe {
-            core::mem::transmute(token)
-        })))
+        Unique(Some(Rc::from_token(UnsafeCell::new(value), token)))
     }
 }
 

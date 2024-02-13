@@ -161,18 +161,18 @@ impl Display for RuraType {
             RuraType::Closure(closure) => write!(f, "{}", closure),
             RuraType::Tuple(tuple) => {
                 write!(f, "(")?;
-                fmt_separated(f, &tuple, ", ")?;
+                fmt_separated(f, tuple, ", ")?;
                 write!(f, ")")
             }
             RuraType::TypeVar(ident) => write!(f, "{}", ident),
             RuraType::TypeRef(name, args) => {
                 write!(f, "{}<", name)?;
-                fmt_separated(f, &args, ", ")?;
+                fmt_separated(f, args, ", ")?;
                 write!(f, ">")
             }
             RuraType::ResolvedInductive(inductive, args) => {
                 write!(f, "{}<", inductive.qualified_name)?;
-                fmt_separated(f, &args, ", ")?;
+                fmt_separated(f, args, ", ")?;
                 write!(f, ">")
             }
         }
@@ -297,7 +297,7 @@ fn get_shape<'a, 'b: 'a>(
         RuraType::Tuple(tuple) => {
             let shapes = tuple
                 .iter()
-                .map(|t| Shape::try_from(t))
+                .map(Shape::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
             if shapes.len() == 1 {
                 return Ok(shapes.into_iter().next().unwrap());

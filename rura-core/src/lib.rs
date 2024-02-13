@@ -64,7 +64,7 @@ pub enum RuraType {
     Closure(Box<ClosureType>),
     Tuple(Box<[RuraType]>),
     TypeVar(Ident),
-    TypeRef(QualifiedName),
+    TypeRef(QualifiedName, Box<[RuraType]>),
     ResolvedInductive(Box<InductiveType>, Box<[RuraType]>),
 }
 
@@ -128,8 +128,19 @@ fn get_shape_inductive<'a, 'b: 'a>(
                 .collect::<Result<Vec<_>, _>>()
         })
         .map(|x| x.map(Vec::into_boxed_slice))
-        .map(|x| x.map(Shape::Composite))
+        .map(|x| {
+            x.map(|x| {
+                if x.len() != 1 {
+                    Shape::Composite(x)
+                } else {
+                    x.into_vec().into_iter().next().unwrap()
+                }
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
+    if shapes.len() == 1 {
+        return Ok(shapes.into_iter().next().unwrap());
+    }
     shapes.sort_unstable();
     Ok(Shape::Alternative(shapes.into_boxed_slice()))
 }
@@ -177,6 +188,9 @@ fn get_shape<'a, 'b: 'a>(
                 .iter()
                 .map(|t| Shape::try_from(t))
                 .collect::<Result<Vec<_>, _>>()?;
+            if shapes.len() == 1 {
+                return Ok(shapes.into_iter().next().unwrap());
+            }
             Ok(Shape::Tuple(shapes.into_boxed_slice()))
         }
         RuraType::TypeVar(ident) => {
@@ -186,7 +200,7 @@ fn get_shape<'a, 'b: 'a>(
                 Ok(Shape::OpenVar(ident.clone()))
             }
         }
-        RuraType::TypeRef(_) => Ok(Shape::Closed(Layout::new::<Rc<()>>())),
+        RuraType::TypeRef(_, _) => Ok(Shape::Closed(Layout::new::<Rc<()>>())),
         RuraType::ResolvedInductive(inductive, args) => {
             let mut changelog = Vec::new();
             for (param, arg) in inductive.type_params.iter().zip(args.iter()) {
@@ -234,5 +248,31 @@ mod test {
                 Shape::Closed(Layout::new::<f64>()),
             ]))
         );
+    }
+
+    #[test]
+    fn test_rura_type_usize_object_reusable() {
+        let box_type = InductiveType {
+            qualified_name: QualifiedName(Box::new(["Box".into()])),
+            type_params: Box::new([Ident("T".into())]),
+            constructors: Box::new([Constructor {
+                name: Ident("Box".into()),
+                args: Box::new([RuraType::TypeVar(Ident("T".into()))]),
+            }]),
+        };
+        let rura_type = RuraType::ResolvedInductive(
+            Box::new(box_type.clone()),
+            Box::new([RuraType::Scalar(ScalarType::USize)]),
+        );
+        let shape_x = Shape::try_from(&rura_type).unwrap();
+        let rura_type = RuraType::ResolvedInductive(
+            Box::new(box_type),
+            Box::new([RuraType::TypeRef(
+                QualifiedName(Box::new(["Box".into()])),
+                Box::new([RuraType::Scalar(ScalarType::USize)]),
+            )]),
+        );
+        let shape_y = Shape::try_from(&rura_type).unwrap();
+        assert_eq!(shape_x, shape_y);
     }
 }

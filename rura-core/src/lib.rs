@@ -1,10 +1,16 @@
-use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
+use std::{any::Any, collections::HashMap, fmt::Display, fmt::Formatter, ops::Deref, rc::Rc};
 
 pub mod lir;
 
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(Box<str>);
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl AsRef<str> for Ident {
     fn as_ref(&self) -> &str {
@@ -15,6 +21,12 @@ impl AsRef<str> for Ident {
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QualifiedName(Box<[Box<str>]>);
+
+impl Display for QualifiedName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fmt_separated(f, &self.0, "::")
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ScalarType {
@@ -36,10 +48,63 @@ pub enum ScalarType {
     Char,
 }
 
+impl Display for ScalarType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ScalarType::I8 => "i8",
+                ScalarType::I16 => "i16",
+                ScalarType::I32 => "i32",
+                ScalarType::I64 => "i64",
+                ScalarType::ISize => "isize",
+                ScalarType::I128 => "i128",
+                ScalarType::U8 => "u8",
+                ScalarType::U16 => "u16",
+                ScalarType::U32 => "u32",
+                ScalarType::U64 => "u64",
+                ScalarType::USize => "usize",
+                ScalarType::U128 => "u128",
+                ScalarType::F32 => "f32",
+                ScalarType::F64 => "f64",
+                ScalarType::Bool => "bool",
+                ScalarType::Char => "char",
+            }
+        )
+    }
+}
+
+fn fmt_separated<T: Display, P: Display>(
+    f: &mut Formatter<'_>,
+    args: &[T],
+    pat: P,
+) -> std::fmt::Result {
+    for (i, arg) in args.iter().enumerate() {
+        if i != 0 {
+            write!(f, "{pat}")?;
+        }
+        write!(f, "{}", arg)?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Constructor {
     pub name: Ident,
     pub args: Box<[RuraType]>,
+}
+
+impl Display for Constructor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if !self.args.is_empty() {
+            write!(f, " (")?;
+            fmt_separated(f, &self.args, ", ")?;
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -49,10 +114,28 @@ pub struct InductiveType {
     pub constructors: Box<[Constructor]>,
 }
 
+impl Display for InductiveType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "enum {}<", self.qualified_name)?;
+        fmt_separated(f, &self.type_params, ", ")?;
+        write!(f, "> {{")?;
+        fmt_separated(f, &self.constructors, ", ")?;
+        write!(f, "}}")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClosureType {
     pub args: Box<[RuraType]>,
     pub ret: RuraType,
+}
+
+impl Display for ClosureType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fn (")?;
+        fmt_separated(f, &self.args, ", ")?;
+        write!(f, ") -> {}", self.ret)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +149,34 @@ pub enum RuraType {
     TypeVar(Ident),
     TypeRef(QualifiedName, Box<[RuraType]>),
     ResolvedInductive(Box<InductiveType>, Box<[RuraType]>),
+}
+
+impl Display for RuraType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuraType::Scalar(scalar) => write!(f, "{}", scalar),
+            RuraType::Unit => write!(f, "()"),
+            RuraType::Bottom => write!(f, "!"),
+            RuraType::Inductive(inductive) => write!(f, "{}", inductive),
+            RuraType::Closure(closure) => write!(f, "{}", closure),
+            RuraType::Tuple(tuple) => {
+                write!(f, "(")?;
+                fmt_separated(f, &tuple, ", ")?;
+                write!(f, ")")
+            }
+            RuraType::TypeVar(ident) => write!(f, "{}", ident),
+            RuraType::TypeRef(name, args) => {
+                write!(f, "{}<", name)?;
+                fmt_separated(f, &args, ", ")?;
+                write!(f, ">")
+            }
+            RuraType::ResolvedInductive(inductive, args) => {
+                write!(f, "{}<", inductive.qualified_name)?;
+                fmt_separated(f, &args, ", ")?;
+                write!(f, ">")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -273,6 +384,7 @@ mod test {
             )]),
         );
         let shape_y = Shape::try_from(&rura_type).unwrap();
+        println!("shape: {:?}, type: {}", shape_y, rura_type);
         assert_eq!(shape_x, shape_y);
     }
 }

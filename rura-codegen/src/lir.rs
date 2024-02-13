@@ -1,5 +1,8 @@
-use proc_macro2::{Ident, TokenStream};
 use quote::quote;
+use rura_core::{
+    types::{InductiveType, RuraType},
+    Ident, QualifiedName,
+};
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
  */
@@ -26,11 +29,11 @@ pub struct TupleEliminator {
 
 pub struct CtorCall {
     /// Identifier of the inductive type
-    pub type_path: syn::Path,
+    pub type_name: InductiveType,
     /// Type parameters
-    pub type_params: Vec<syn::Path>,
+    pub type_params: Box<[RuraType]>,
     /// Identifier of the constructor
-    pub ctor: Ident,
+    pub ctor_idx: usize,
     /// Identifiers of the arguments
     pub args: Vec<usize>,
     /// Reuse token
@@ -39,9 +42,35 @@ pub struct CtorCall {
     pub result: usize,
 }
 
+pub enum UnOp {
+    Neg,
+    Not,
+}
+
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
 pub struct BinaryOp {
     /// The binary operation to perform
-    pub op: syn::BinOp,
+    pub op: BinOp,
     /// Arithmetic mode (only relevant for arithmetic operations)
     pub mode: ArithMode,
     /// Identifier of the left-hand side operand
@@ -54,7 +83,7 @@ pub struct BinaryOp {
 
 pub struct UnaryOp {
     /// The unary operation to perform
-    pub op: syn::UnOp,
+    pub op: UnOp,
     /// Identifier of the operand
     pub operand: usize,
     /// Identifier of the result
@@ -63,7 +92,7 @@ pub struct UnaryOp {
 
 pub struct FunctionCall {
     /// Identifier of the function to call
-    pub function: syn::Path,
+    pub function: QualifiedName,
     /// Identifiers of the arguments
     pub args: Vec<usize>,
     /// Identifier of the result
@@ -83,7 +112,7 @@ pub struct IfThenElse {
 
 pub struct ClosureCreation {
     /// parameters
-    pub parameters: Vec<syn::Path>,
+    pub parameters: Box<[RuraType]>,
     /// values to capture
     pub capture: Vec<usize>,
     /// body
@@ -182,11 +211,17 @@ pub enum Lir {
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {
-    proc_macro2::Ident::new(&format!("χ{}", id), proc_macro2::Span::call_site())
+    let id = format!("χ{}", id);
+    proc_macro2::Ident::new(&id, proc_macro2::Span::call_site())
+}
+
+fn ident(id: &Ident) -> proc_macro2::Ident {
+    let id = id.as_ref();
+    proc_macro2::Ident::new(id, proc_macro2::Span::call_site())
 }
 
 impl Lir {
-    pub fn lower_to_rust(&self) -> TokenStream {
+    pub fn lower_to_rust(&self) -> proc_macro2::TokenStream {
         match self {
             Lir::Uniquefy { value, result } => {
                 let value = variable(*value);
@@ -229,6 +264,7 @@ impl Lir {
                 let value = variable(*value);
                 let assignments = assignments.iter().map(|(field, id)| {
                     let field = field.clone();
+                    let field = ident(&field);
                     let id = variable(*id);
                     quote! { mutable_ref.#field = #id; }
                 });
@@ -276,7 +312,7 @@ mod tests {
     fn test_inplace_update_lower_to_rust() {
         well_formed_lower(Lir::InplaceUpdate {
             value: 1,
-            assignments: vec![(Ident::new("foo", proc_macro2::Span::call_site()), 2)],
+            assignments: vec![(Ident::new("foo"), 2)],
             result: 3,
         });
     }

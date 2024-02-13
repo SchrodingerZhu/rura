@@ -1,6 +1,5 @@
 use std::{fmt::Display, fmt::Formatter};
 
-pub mod lir;
 pub mod shape;
 pub mod types;
 
@@ -21,6 +20,12 @@ fn fmt_separated<T: Display, P: Display>(
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(Box<str>);
+
+impl Ident {
+    pub fn new(s: impl Into<Box<str>>) -> Self {
+        Self(s.into())
+    }
+}
 
 impl Display for Ident {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

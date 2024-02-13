@@ -136,16 +136,20 @@ mod test {
     */
 
     #[derive(Clone, Debug)]
-    enum List {
+    enum List<T> {
         Nil,
-        Cons(i32, Rc<List>),
+        Cons(T, Rc<Self>),
     }
 
-    fn add(xs: Rc<List>, val: i32) -> Rc<List> {
+    fn add<T: core::ops::Add<U> + Clone, U: Clone>(xs: Rc<List<T>>, val: U) -> Rc<List<T::Output>> {
         match *xs {
-            List::Nil => xs,
-            List::Cons(y, ref ys) => {
-                let new_xs = add(ys.clone(), val);
+            List::Nil => {
+                let token = xs.drop_for_reuse();
+                Rc::from_token(List::Nil, token)
+            }
+            List::Cons(ref y, ref ys) => {
+                let new_xs = add(ys.clone(), val.clone());
+                let y = y.clone();
                 let token = xs.drop_for_reuse();
                 Rc::from_token(List::Cons(y + val, new_xs), token)
             }
@@ -153,9 +157,16 @@ mod test {
     }
 
     #[test]
-    fn test() {
+    fn test_add() {
         let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
         let ys = add(xs, 1);
+        std::println!("{:?}", ys);
+        use std::string::String;
+        let xs = Rc::new(List::Cons(
+            String::from("123"),
+            Rc::new(List::Cons(String::from("234"), Rc::new(List::Nil))),
+        ));
+        let ys = add(xs, "456");
         std::println!("{:?}", ys);
     }
 }

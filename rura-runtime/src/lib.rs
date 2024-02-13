@@ -42,9 +42,9 @@ impl<T> ReuseToken<T> {
 
 impl<T> Drop for ReuseToken<T> {
     fn drop(&mut self) {
-        if let ReuseToken::Valid(ptr, ..) = self {
+        if let ReuseToken::Valid(rc, ..) = self {
             unsafe {
-                let rc = Rc::from_raw(ptr.as_ref());
+                let rc = Rc::from_raw(rc.as_ptr());
                 crate::assert_unchecked(rc.is_exclusive());
             }
         }
@@ -54,10 +54,10 @@ impl<T> Drop for ReuseToken<T> {
 pub trait MemoryReuse: Deref {
     fn is_exclusive(&self) -> bool;
     #[must_use]
-    fn drop_for_reuse(self) -> ReuseToken<Self::Target>
+    fn drop_for_reuse<U>(self) -> ReuseToken<U>
     where
         Self::Target: Sized;
-    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self
+    fn from_token(value: Self::Target, token: ReuseToken<Self::Target>) -> Self
     where
         Self::Target: Sized;
 }
@@ -67,11 +67,13 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
     fn is_exclusive(&self) -> bool {
         Rc::strong_count(self) == 1 && Rc::weak_count(self) == 0
     }
-    fn drop_for_reuse(self) -> ReuseToken<Self::Target>
+    fn drop_for_reuse<U>(self) -> ReuseToken<U>
     where
         T: Sized,
     {
-        if self.is_exclusive() {
+        let self_layout: core::alloc::Layout = core::alloc::Layout::new::<T>();
+        let target_layout: core::alloc::Layout = core::alloc::Layout::new::<U>();
+        if self_layout == target_layout && self.is_exclusive() {
             let ptr = Rc::into_raw(self) as *mut T;
             unsafe {
                 core::ptr::drop_in_place(ptr);
@@ -81,7 +83,7 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
             ReuseToken::Invalid
         }
     }
-    unsafe fn from_token<U>(value: Self::Target, token: ReuseToken<U>) -> Self
+    fn from_token(value: Self::Target, token: ReuseToken<Self::Target>) -> Self
     where
         T: Sized,
     {
@@ -89,9 +91,8 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
         debug_assert_eq!(core::mem::align_of::<T>(), token.layout().align());
         match token {
             ReuseToken::Invalid => Rc::new(value),
-            ReuseToken::Valid(ptr, ..) => unsafe {
+            ReuseToken::Valid(mut ptr, ..) => unsafe {
                 core::mem::forget(token);
-                let mut ptr = ptr.cast::<MaybeUninit<T>>();
                 ptr.as_mut().write(value);
                 Rc::from_raw(ptr.as_ptr().cast())
             },
@@ -146,7 +147,7 @@ mod test {
             List::Cons(y, ref ys) => {
                 let new_xs = add(ys.clone(), val);
                 let token = xs.drop_for_reuse();
-                unsafe { Rc::from_token(List::Cons(y + val, new_xs), token) }
+                Rc::from_token(List::Cons(y + val, new_xs), token)
             }
         }
     }

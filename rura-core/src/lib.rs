@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
 pub mod lir;
 
@@ -68,17 +68,42 @@ pub enum RuraType {
     ResolvedInductive(Box<InductiveType>, Box<[RuraType]>),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Layout(std::alloc::Layout);
+
+impl Deref for Layout {
+    type Target = std::alloc::Layout;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialOrd for Layout {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Layout {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.0.size(), self.0.align()).cmp(&(other.0.size(), other.0.align()))
+    }
+}
+
+impl Layout {
+    pub fn new<T>() -> Self {
+        Self(std::alloc::Layout::new::<T>())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Shape {
-    Object,
-    ErasedClosure,
-    Closure,
+    Closed(Layout),
+    OpenVar(Ident),
     Tuple(Box<[Shape]>),
-    Scalar(ScalarType),
-    Unit,
     Composite(Box<[Shape]>),
     Alternative(Box<[Shape]>),
-    TypeVar(Ident),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -114,8 +139,25 @@ fn get_shape<'a, 'b: 'a>(
     context: &'a mut HashMap<&'b Ident, Shape>,
 ) -> Result<Shape, ShapeError> {
     match rura_type {
-        RuraType::Scalar(scalar) => Ok(Shape::Scalar(*scalar)),
-        RuraType::Unit => Ok(Shape::Unit),
+        RuraType::Scalar(scalar) => match scalar {
+            ScalarType::I8 => Ok(Shape::Closed(Layout::new::<i8>())),
+            ScalarType::I16 => Ok(Shape::Closed(Layout::new::<i16>())),
+            ScalarType::I32 => Ok(Shape::Closed(Layout::new::<i32>())),
+            ScalarType::I64 => Ok(Shape::Closed(Layout::new::<i64>())),
+            ScalarType::ISize => Ok(Shape::Closed(Layout::new::<isize>())),
+            ScalarType::I128 => Ok(Shape::Closed(Layout::new::<i128>())),
+            ScalarType::U8 => Ok(Shape::Closed(Layout::new::<u8>())),
+            ScalarType::U16 => Ok(Shape::Closed(Layout::new::<u16>())),
+            ScalarType::U32 => Ok(Shape::Closed(Layout::new::<u32>())),
+            ScalarType::U64 => Ok(Shape::Closed(Layout::new::<u64>())),
+            ScalarType::USize => Ok(Shape::Closed(Layout::new::<usize>())),
+            ScalarType::U128 => Ok(Shape::Closed(Layout::new::<u128>())),
+            ScalarType::F32 => Ok(Shape::Closed(Layout::new::<f32>())),
+            ScalarType::F64 => Ok(Shape::Closed(Layout::new::<f64>())),
+            ScalarType::Bool => Ok(Shape::Closed(Layout::new::<bool>())),
+            ScalarType::Char => Ok(Shape::Closed(Layout::new::<char>())),
+        },
+        RuraType::Unit => Ok(Shape::Closed(Layout::new::<()>())),
         RuraType::Bottom => Err(ShapeError::BottomType),
         RuraType::Inductive(inductive) => {
             if !inductive.type_params.is_empty() {
@@ -125,9 +167,9 @@ fn get_shape<'a, 'b: 'a>(
         }
         RuraType::Closure(x) => {
             if x.args.len() > 16 {
-                Ok(Shape::ErasedClosure)
+                Ok(Shape::Closed(Layout::new::<Rc<()>>()))
             } else {
-                Ok(Shape::Closure)
+                Ok(Shape::Closed(Layout::new::<Rc<dyn Any>>()))
             }
         }
         RuraType::Tuple(tuple) => {
@@ -141,10 +183,10 @@ fn get_shape<'a, 'b: 'a>(
             if let Some(t) = context.get(ident).cloned() {
                 Ok(t)
             } else {
-                Ok(Shape::TypeVar(ident.clone()))
+                Ok(Shape::OpenVar(ident.clone()))
             }
         }
-        RuraType::TypeRef(_) => Ok(Shape::Object),
+        RuraType::TypeRef(_) => Ok(Shape::Closed(Layout::new::<Rc<()>>())),
         RuraType::ResolvedInductive(inductive, args) => {
             let mut changelog = Vec::new();
             for (param, arg) in inductive.type_params.iter().zip(args.iter()) {
@@ -188,8 +230,8 @@ mod test {
         assert_eq!(
             shape,
             Shape::Tuple(Box::new([
-                Shape::Scalar(ScalarType::I32),
-                Shape::Scalar(ScalarType::F64)
+                Shape::Closed(Layout::new::<i32>()),
+                Shape::Closed(Layout::new::<f64>()),
             ]))
         );
     }

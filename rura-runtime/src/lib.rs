@@ -153,6 +153,8 @@ impl<T: ?Sized + Clone> Exclusivity for Rc<T> {
 #[cfg(test)]
 mod test {
     extern crate std;
+    use alloc::string::String;
+
     use super::*;
     /*
     rura! {
@@ -200,13 +202,21 @@ mod test {
         std::println!("{:?}", ys);
     }
 
-    fn update_head(xs: Rc<List<usize>>) -> Rc<List<usize>> {
+    fn update_string(s: Rc<String>) -> Rc<String> {
+        let (tk, mut s) = s.unwrap_for_reuse();
+        s.push_str("13");
+        Rc::from_token(s, tk)
+    }
+
+    fn update_head(xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
         match xs.unwrap_for_reuse() {
             (tk, List::Nil) => unsafe { tk.revive(List::Nil).into() },
             (tk, List::Cons(y, ys)) => unsafe {
                 let mut rc = tk.revive(List::Cons(y, ys));
                 if let List::Cons(ref mut y, ..) = &mut *rc {
-                    *y += 1;
+                    let (hole, s) = Hole::new(y);
+                    let new_y = update_string(s);
+                    hole.fill(new_y);
                     rc.into()
                 } else {
                     core::hint::unreachable_unchecked();
@@ -215,10 +225,26 @@ mod test {
         }
     }
 
+    fn update_head2(mut xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
+        match *xs.make_mut() {
+            List::Nil => xs,
+            List::Cons(ref mut y, ..) => {
+                let (hole, s) = Hole::new(y);
+                let new_y = update_string(s);
+                hole.fill(new_y);
+                xs
+            }
+        }
+    }
+
     #[test]
     fn test_update_head() {
-        let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
-        let ys = update_head(xs);
-        std::println!("{:?}", ys);
+        let xs = Rc::new(List::Cons(
+            Rc::new("".into()),
+            Rc::new(List::Cons(Rc::new("123".into()), Rc::new(List::Nil))),
+        ));
+        let ys = update_head2(xs);
+        let zs = update_head(ys);
+        std::println!("{:?}", zs);
     }
 }

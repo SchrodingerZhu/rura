@@ -4,7 +4,7 @@
     feature(hint_assert_unchecked, fn_traits, unboxed_closures)
 )]
 use alloc::rc::Rc;
-use core::{mem::MaybeUninit, ops::Deref, ptr::NonNull};
+use core::{mem::MaybeUninit, ops::Deref};
 mod closure;
 mod unique;
 extern crate alloc;
@@ -26,25 +26,28 @@ unsafe fn assert_unchecked(x: bool) {
     }
 }
 
-pub enum ReuseToken<T> {
-    Invalid,
-    Valid(NonNull<MaybeUninit<T>>),
-}
+#[repr(transparent)]
+pub struct ReuseToken<T>(Option<Rc<MaybeUninit<T>>>);
 
 impl<T> ReuseToken<T> {
     pub fn is_valid(&self) -> bool {
-        matches!(self, ReuseToken::Valid(..))
+        self.0.is_some()
     }
     pub fn layout(&self) -> core::alloc::Layout {
         core::alloc::Layout::new::<T>()
+    }
+    pub fn valid(rc: Rc<MaybeUninit<T>>) -> Self {
+        ReuseToken(Some(rc))
+    }
+    pub fn invalid() -> Self {
+        ReuseToken(None)
     }
 }
 
 impl<T> Drop for ReuseToken<T> {
     fn drop(&mut self) {
-        if let ReuseToken::Valid(rc, ..) = self {
+        if let Some(rc, ..) = self.0.take() {
             unsafe {
-                let rc = Rc::from_raw(rc.as_ptr());
                 crate::assert_unchecked(rc.is_exclusive());
             }
         }
@@ -72,16 +75,16 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
         T: Sized,
     {
         if self.is_exclusive() {
-            let ptr = Rc::into_raw(self) as *mut T;
+            let ptr: *mut MaybeUninit<T> = Rc::into_raw(self).cast_mut().cast();
             unsafe {
-                core::ptr::drop_in_place(ptr);
-                ReuseToken::Valid(NonNull::new_unchecked(ptr.cast()))
+                (*ptr).assume_init_drop();
+                ReuseToken::valid(Rc::from_raw(ptr))
             }
         } else {
-            ReuseToken::Invalid
+            ReuseToken::invalid()
         }
     }
-    fn from_token<U: Sized>(value: Self::Target, token: ReuseToken<U>) -> Self
+    fn from_token<U: Sized>(value: Self::Target, mut token: ReuseToken<U>) -> Self
     where
         T: Sized,
     {
@@ -90,13 +93,12 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
         if token_layout != value_layout {
             return Rc::new(value);
         }
-        match token {
-            ReuseToken::Invalid => Rc::new(value),
-            ReuseToken::Valid(ptr, ..) => unsafe {
-                core::mem::forget(token);
-                let mut ptr: NonNull<MaybeUninit<T>> = ptr.cast();
-                ptr.as_mut().write(value);
-                Rc::from_raw(ptr.as_ptr().cast())
+        match token.0.take() {
+            None => Rc::new(value),
+            Some(rc) => unsafe {
+                let ptr: *mut MaybeUninit<T> = Rc::into_raw(rc).cast_mut().cast();
+                (*ptr).write(value);
+                Rc::from_raw(ptr.cast())
             },
         }
     }

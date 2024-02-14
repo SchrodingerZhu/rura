@@ -1,7 +1,7 @@
 use core::{
     cell::UnsafeCell,
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
-    ptr::NonNull,
 };
 
 use alloc::rc::Rc;
@@ -67,11 +67,12 @@ impl<T: ?Sized> MemoryReuse for Unique<T> {
     where
         T: Sized,
     {
-        let ptr = Rc::into_raw(unsafe { self.0.take().unwrap_unchecked() }) as *mut T;
-        core::mem::forget(self);
+        let ptr: *mut MaybeUninit<T> = Rc::into_raw(unsafe { self.0.take().unwrap_unchecked() })
+            .cast_mut()
+            .cast();
         unsafe {
-            core::ptr::drop_in_place(ptr);
-            ReuseToken::Valid(NonNull::new_unchecked(ptr.cast()))
+            (*ptr).assume_init_drop();
+            ReuseToken::valid(Rc::from_raw(ptr))
         }
     }
 
@@ -95,9 +96,10 @@ impl<T: ?Sized> Exclusivity for Unique<T> {
 
 impl<T: ?Sized> Drop for Unique<T> {
     fn drop(&mut self) {
-        unsafe {
-            let rc = self.0.take().unwrap_unchecked();
-            crate::assert_unchecked(rc.is_exclusive());
+        if let Some(rc) = self.0.take() {
+            unsafe {
+                crate::assert_unchecked(rc.is_exclusive());
+            }
         }
     }
 }

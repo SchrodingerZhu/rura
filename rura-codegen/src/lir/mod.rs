@@ -1,3 +1,4 @@
+pub mod parser;
 use quote::quote;
 use rura_core::{types::SurfaceType, Ident, QualifiedName};
 /**

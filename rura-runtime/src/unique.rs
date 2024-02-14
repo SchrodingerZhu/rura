@@ -12,7 +12,7 @@ use crate::{Exclusivity, MemoryReuse, ReuseToken};
 /// a wrapper that makes it normially different from `Rc` and `Arc`.
 /// `UnsafeCell<T>`` is of transparent layout of T. Therefore, we can directly wrap the inner cell to get mutability.
 #[repr(transparent)]
-pub struct Unique<T: ?Sized>(Option<Rc<UnsafeCell<T>>>);
+pub struct Unique<T: ?Sized>(pub(crate) Option<Rc<UnsafeCell<T>>>);
 
 impl<T: ?Sized> Unique<T> {
     pub fn new(value: T) -> Self

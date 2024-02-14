@@ -44,6 +44,17 @@ impl<T> ReuseToken<T> {
     pub fn invalid() -> Self {
         ReuseToken(None)
     }
+    pub unsafe fn revive(mut self, value: T) -> Unique<T> {
+        match self.0.take() {
+            None => Unique::new(value),
+            Some(rc) => {
+                let ptr = Rc::into_raw(rc);
+                core::mem::forget(value);
+                let rc = Rc::from_raw(ptr.cast());
+                Unique(Some(rc))
+            }
+        }
+    }
 }
 
 impl<T> Drop for ReuseToken<T> {
@@ -169,8 +180,7 @@ mod test {
         match xs.unwrap_for_reuse() {
             (tk, List::Nil) => Rc::from_token(List::Nil, tk),
             (tk, List::Cons(y, ys)) => {
-                let new_xs = add(ys.clone(), val.clone());
-                let y = y.clone();
+                let new_xs = add(ys, val.clone());
                 Rc::from_token(List::Cons(y + val, new_xs), tk)
             }
         }
@@ -187,6 +197,28 @@ mod test {
             Rc::new(List::Cons(String::from("234"), Rc::new(List::Nil))),
         ));
         let ys = add(xs, "456");
+        std::println!("{:?}", ys);
+    }
+
+    fn update_head(xs: Rc<List<usize>>) -> Rc<List<usize>> {
+        match xs.unwrap_for_reuse() {
+            (tk, List::Nil) => unsafe { tk.revive(List::Nil).into() },
+            (tk, List::Cons(y, ys)) => unsafe {
+                let mut rc = tk.revive(List::Cons(y, ys));
+                if let List::Cons(ref mut y, ..) = &mut *rc {
+                    *y += 1;
+                    rc.into()
+                } else {
+                    core::hint::unreachable_unchecked();
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn test_update_head() {
+        let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
+        let ys = update_head(xs);
         std::println!("{:?}", ys);
     }
 }

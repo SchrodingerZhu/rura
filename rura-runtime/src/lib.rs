@@ -62,6 +62,9 @@ pub trait MemoryReuse: Deref {
     fn drop_for_reuse(self) -> ReuseToken<Self::Target>
     where
         Self::Target: Sized;
+    fn unwrap_for_reuse(self) -> (ReuseToken<Self::Target>, Self::Target)
+    where
+        Self::Target: Sized + Clone;
     fn from_token<U: Sized>(value: Self::Target, token: ReuseToken<U>) -> Self
     where
         Self::Target: Sized;
@@ -102,6 +105,21 @@ impl<T: ?Sized> MemoryReuse for Rc<T> {
                 (*ptr).write(value);
                 Rc::from_raw(ptr.cast())
             },
+        }
+    }
+
+    fn unwrap_for_reuse(self) -> (ReuseToken<Self::Target>, Self::Target)
+    where
+        Self::Target: Sized + Clone,
+    {
+        if self.is_exclusive() {
+            let ptr: *mut MaybeUninit<T> = Rc::into_raw(self).cast_mut().cast();
+            unsafe {
+                let value = (*ptr).assume_init_read();
+                (ReuseToken::valid(Rc::from_raw(ptr)), value)
+            }
+        } else {
+            (ReuseToken::invalid(), (*self).clone())
         }
     }
 }
@@ -148,16 +166,12 @@ mod test {
     }
 
     fn add<T: core::ops::Add<U> + Clone, U: Clone>(xs: Rc<List<T>>, val: U) -> Rc<List<T::Output>> {
-        match *xs {
-            List::Nil => {
-                let token = xs.drop_for_reuse();
-                Rc::from_token(List::Nil, token)
-            }
-            List::Cons(ref y, ref ys) => {
+        match xs.unwrap_for_reuse() {
+            (tk, List::Nil) => Rc::from_token(List::Nil, tk),
+            (tk, List::Cons(y, ys)) => {
                 let new_xs = add(ys.clone(), val.clone());
                 let y = y.clone();
-                let token = xs.drop_for_reuse();
-                Rc::from_token(List::Cons(y + val, new_xs), token)
+                Rc::from_token(List::Cons(y + val, new_xs), tk)
             }
         }
     }

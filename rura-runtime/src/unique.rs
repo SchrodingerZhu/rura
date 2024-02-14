@@ -82,6 +82,21 @@ impl<T: ?Sized> MemoryReuse for Unique<T> {
     {
         Unique(Some(Rc::from_token(UnsafeCell::new(value), token)))
     }
+
+    fn unwrap_for_reuse(mut self) -> (ReuseToken<Self::Target>, Self::Target)
+    where
+        Self::Target: Sized + Clone,
+    {
+        let ptr: *mut MaybeUninit<T> = Rc::into_raw(unsafe { self.0.take().unwrap_unchecked() })
+            .cast_mut()
+            .cast();
+        unsafe {
+            (
+                ReuseToken::valid(Rc::from_raw(ptr)),
+                (*ptr).assume_init_read(),
+            )
+        }
+    }
 }
 
 impl<T: ?Sized> Exclusivity for Unique<T> {

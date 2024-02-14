@@ -1,8 +1,5 @@
 use quote::quote;
-use rura_core::{
-    types::{InductiveType, RuraType},
-    Ident, QualifiedName,
-};
+use rura_core::{types::SurfaceType, Ident, QualifiedName};
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
  */
@@ -29,9 +26,9 @@ pub struct TupleEliminator {
 
 pub struct CtorCall {
     /// Identifier of the inductive type
-    pub type_name: InductiveType,
+    pub type_name: QualifiedName,
     /// Type parameters
-    pub type_params: Box<[RuraType]>,
+    pub type_params: Box<[SurfaceType]>,
     /// Identifier of the constructor
     pub ctor_idx: usize,
     /// Identifiers of the arguments
@@ -112,7 +109,7 @@ pub struct IfThenElse {
 
 pub struct ClosureCreation {
     /// parameters
-    pub parameters: Box<[RuraType]>,
+    pub parameters: Box<[SurfaceType]>,
     /// values to capture
     pub capture: Vec<usize>,
     /// body

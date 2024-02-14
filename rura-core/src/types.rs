@@ -154,3 +154,22 @@ impl Display for RuraType {
         }
     }
 }
+
+/// Surface Type is the type without detailed structure
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SurfaceType {
+    /// fn (A, B) -> C
+    Closure(Box<[Self]>, Box<Self>),
+    /// usize, i32, etc
+    Scalar(ScalarType),
+    /// ()
+    Unit,
+    /// !
+    Bottom,
+    /// List<T>, Option<T>, etc
+    Object(QualifiedName, Box<[Self]>),
+    /// (A, B, C, D, ...)
+    Tuple(Box<[Self]>),
+    /// A type variable in context
+    TypeVar(TypeVar),
+}

@@ -6,10 +6,12 @@
 use alloc::rc::Rc;
 use core::{mem::MaybeUninit, ops::Deref};
 mod closure;
+mod hole;
 mod unique;
 extern crate alloc;
 
 pub use closure::*;
+pub use hole::Hole;
 pub use unique::Unique;
 
 #[inline(always)]

@@ -156,15 +156,6 @@ pub enum Lir {
         eliminator: Vec<InductiveEliminator>,
     },
 
-    InplaceUpdate {
-        /// Identifier of the value to update
-        value: usize,
-        /// Identifier of the index
-        assignments: Vec<(Ident, usize)>,
-        /// Identifier of the result
-        result: usize,
-    },
-
     Ref {
         /// Identifier of the value to reference
         value: usize,
@@ -253,28 +244,6 @@ impl Lir {
                     let #result = (#( #elements ),*);
                 }
             }
-            Lir::InplaceUpdate {
-                value,
-                assignments,
-                result,
-            } => {
-                let value = variable(*value);
-                let assignments = assignments.iter().map(|(field, id)| {
-                    let field = field.clone();
-                    let field = ident(&field);
-                    let id = variable(*id);
-                    quote! { mutable_ref.#field = #id; }
-                });
-                let result = variable(*result);
-                quote! {
-                    let #result = {
-                      let mut #value = #value;
-                      let mutable_ref = #value.make_mut();
-                      #( #assignments )*
-                      #value
-                    };
-                }
-            }
             _ => unimplemented!(),
         }
     }
@@ -301,15 +270,6 @@ mod tests {
     fn test_tuple_lower_to_rust() {
         well_formed_lower(Lir::Tuple {
             elements: vec![1, 2],
-            result: 3,
-        });
-    }
-
-    #[test]
-    fn test_inplace_update_lower_to_rust() {
-        well_formed_lower(Lir::InplaceUpdate {
-            value: 1,
-            assignments: vec![(Ident::new("foo"), 2)],
             result: 3,
         });
     }

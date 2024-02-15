@@ -44,17 +44,6 @@ impl<T> ReuseToken<T> {
     pub fn invalid() -> Self {
         ReuseToken(None)
     }
-    pub unsafe fn revive(mut self, value: T) -> Unique<T> {
-        match self.0.take() {
-            None => Unique::new(value),
-            Some(rc) => {
-                let ptr = Rc::into_raw(rc);
-                core::mem::forget(value);
-                let rc = Rc::from_raw(ptr.cast());
-                Unique(Some(rc))
-            }
-        }
-    }
 }
 
 impl<T> Drop for ReuseToken<T> {
@@ -175,6 +164,7 @@ mod test {
     #[derive(Clone, Debug)]
     enum List<T> {
         Nil,
+        #[allow(dead_code)]
         Cons(T, Rc<Self>),
         ToDrop(Rc<Self>),
     }
@@ -184,23 +174,6 @@ mod test {
         s.push_str("13");
         Rc::from_token(s, tk)
     }
-
-    // fn update_head(xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
-    //     match xs.unwrap_for_reuse() {
-    //         (tk, List::Nil) => unsafe { tk.revive(List::Nil).into() },
-    //         (tk, List::Cons(y, ys)) => unsafe {
-    //             let mut rc = tk.revive(List::Cons(y, ys));
-    //             if let List::Cons(ref mut y, ..) = &mut *rc {
-    //                 let (hole, s) = Hole::new(y);
-    //                 let new_y = update_string(s);
-    //                 hole.fill(new_y);
-    //                 rc.into()
-    //             } else {
-    //                 core::hint::unreachable_unchecked();
-    //             }
-    //         },
-    //     }
-    // }
 
     fn update_head(mut xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
         match *xs {

@@ -176,30 +176,7 @@ mod test {
     enum List<T> {
         Nil,
         Cons(T, Rc<Self>),
-    }
-
-    fn add<T: core::ops::Add<U> + Clone, U: Clone>(xs: Rc<List<T>>, val: U) -> Rc<List<T::Output>> {
-        match xs.unwrap_for_reuse() {
-            (tk, List::Nil) => Rc::from_token(List::Nil, tk),
-            (tk, List::Cons(y, ys)) => {
-                let new_xs = add(ys, val.clone());
-                Rc::from_token(List::Cons(y + val, new_xs), tk)
-            }
-        }
-    }
-
-    #[test]
-    fn test_add() {
-        let xs = Rc::new(List::Cons(1, Rc::new(List::Cons(2, Rc::new(List::Nil)))));
-        let ys = add(xs, 1);
-        std::println!("{:?}", ys);
-        use std::string::String;
-        let xs = Rc::new(List::Cons(
-            String::from("123"),
-            Rc::new(List::Cons(String::from("234"), Rc::new(List::Nil))),
-        ));
-        let ys = add(xs, "456");
-        std::println!("{:?}", ys);
+        ToDrop(Rc<Self>),
     }
 
     fn update_string(s: Rc<String>) -> Rc<String> {
@@ -208,31 +185,46 @@ mod test {
         Rc::from_token(s, tk)
     }
 
-    fn update_head(xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
-        match xs.unwrap_for_reuse() {
-            (tk, List::Nil) => unsafe { tk.revive(List::Nil).into() },
-            (tk, List::Cons(y, ys)) => unsafe {
-                let mut rc = tk.revive(List::Cons(y, ys));
-                if let List::Cons(ref mut y, ..) = &mut *rc {
+    // fn update_head(xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
+    //     match xs.unwrap_for_reuse() {
+    //         (tk, List::Nil) => unsafe { tk.revive(List::Nil).into() },
+    //         (tk, List::Cons(y, ys)) => unsafe {
+    //             let mut rc = tk.revive(List::Cons(y, ys));
+    //             if let List::Cons(ref mut y, ..) = &mut *rc {
+    //                 let (hole, s) = Hole::new(y);
+    //                 let new_y = update_string(s);
+    //                 hole.fill(new_y);
+    //                 rc.into()
+    //             } else {
+    //                 core::hint::unreachable_unchecked();
+    //             }
+    //         },
+    //     }
+    // }
+
+    fn update_head(mut xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
+        match *xs {
+            List::Nil => xs,
+            List::Cons(..) => {
+                if let List::Cons(ref mut y, ..) = *xs.make_mut() {
                     let (hole, s) = Hole::new(y);
                     let new_y = update_string(s);
                     hole.fill(new_y);
-                    rc.into()
+                    xs
                 } else {
-                    core::hint::unreachable_unchecked();
+                    unsafe {
+                        core::hint::unreachable_unchecked();
+                    }
                 }
-            },
-        }
-    }
-
-    fn update_head2(mut xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {
-        match *xs.make_mut() {
-            List::Nil => xs,
-            List::Cons(ref mut y, ..) => {
-                let (hole, s) = Hole::new(y);
-                let new_y = update_string(s);
-                hole.fill(new_y);
-                xs
+            }
+            List::ToDrop(..) => {
+                if let (tk, List::ToDrop(tail)) = xs.unwrap_for_reuse() {
+                    Rc::from_token(List::Cons(Rc::new("123".into()), tail), tk)
+                } else {
+                    unsafe {
+                        core::hint::unreachable_unchecked();
+                    }
+                }
             }
         }
     }
@@ -243,7 +235,8 @@ mod test {
             Rc::new("".into()),
             Rc::new(List::Cons(Rc::new("123".into()), Rc::new(List::Nil))),
         ));
-        let ys = update_head2(xs);
+        let xs = Rc::new(List::ToDrop(xs));
+        let ys = update_head(xs);
         let zs = update_head(ys);
         std::println!("{:?}", zs);
     }

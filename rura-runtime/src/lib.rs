@@ -169,10 +169,9 @@ mod test {
         ToDrop(Rc<Self>),
     }
 
-    fn update_string(s: Rc<String>) -> Rc<String> {
-        let (tk, mut s) = s.unwrap_for_reuse();
-        s.push_str("13");
-        Rc::from_token(s, tk)
+    fn update_string(mut s: Rc<String>) -> Rc<String> {
+        s.make_mut().push_str("123");
+        s
     }
 
     fn update_head(mut xs: Rc<List<Rc<String>>>) -> Rc<List<Rc<String>>> {

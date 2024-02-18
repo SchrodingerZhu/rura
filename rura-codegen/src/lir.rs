@@ -14,30 +14,15 @@ pub enum ArithMode {
     Saturating,
 }
 
-pub enum MakeMutReceiver {
-    MutationHole {
-        target: Member,
-        hole: usize,
-        value: usize,
-    },
-    Value {
-        target: Member,
-        value: usize,
-    },
+pub struct MakeMutReceiver {
+    target: Member,
+    hole: usize,
+    value: usize,
 }
 
 impl MakeMutReceiver {
     pub fn is_named(&self) -> bool {
-        matches!(
-            self,
-            Self::MutationHole {
-                target: Member::Named(_),
-                ..
-            } | Self::Value {
-                target: Member::Named(_),
-                ..
-            }
-        )
+        matches!(self.target, Member::Named(_),)
     }
 }
 
@@ -78,7 +63,7 @@ fn member_list(members: &[(Member, usize)]) -> TokenStream {
 
 fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
     let fields = holes.iter().map(|hole| match hole {
-        MakeMutReceiver::MutationHole {
+        MakeMutReceiver {
             target: Member::Named(name),
             value,
             ..
@@ -87,28 +72,13 @@ fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
             let value = variable(*value);
             quote! { #name: ref mut #value }
         }
-        MakeMutReceiver::MutationHole {
+        MakeMutReceiver {
             target: Member::Index(_),
             value,
             ..
         } => {
             let value = variable(*value);
             quote! { ref mut #value }
-        }
-        MakeMutReceiver::Value {
-            target: Member::Named(name),
-            value,
-        } => {
-            let name = ident(name);
-            let value = variable(*value);
-            quote! { #name: #value }
-        }
-        MakeMutReceiver::Value {
-            target: Member::Index(_),
-            value,
-        } => {
-            let value = variable(*value);
-            quote! { #value }
         }
     });
     if holes[0].is_named() {
@@ -124,9 +94,7 @@ fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
 
 fn hole_declarations(holes: &[MakeMutReceiver]) -> impl Iterator<Item = TokenStream> + '_ {
     holes.iter().filter_map(|hole| {
-        let MakeMutReceiver::MutationHole { hole, value, .. } = hole else {
-            return None;
-        };
+        let MakeMutReceiver { hole, value, .. } = hole;
         Some({
             let value = variable(*value);
             let hole = variable(*hole);
@@ -523,21 +491,15 @@ mod tests {
             eliminator: vec![InductiveEliminator {
                 ctor: QualifiedName::new(Box::new([Ident::new("Some")])),
                 style: EliminationStyle::Mutation {
-                    holes: vec![
-                        MakeMutReceiver::MutationHole {
-                            target: Member::Named(Ident::new("x")),
-                            hole: 2,
-                            value: 3,
-                        },
-                        MakeMutReceiver::Value {
-                            target: Member::Named(Ident::new("y")),
-                            value: 4,
-                        },
-                    ]
+                    holes: vec![MakeMutReceiver {
+                        target: Member::Named(Ident::new("x")),
+                        hole: 2,
+                        value: 3,
+                    }]
                     .into_boxed_slice(),
-                    value: 5,
+                    value: 4,
                 },
-                body: Block(vec![Lir::Return { value: 5 }]),
+                body: Block(vec![Lir::Return { value: 4 }]),
             }]
             .into_boxed_slice(),
         });

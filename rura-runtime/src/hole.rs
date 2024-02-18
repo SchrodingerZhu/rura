@@ -1,24 +1,29 @@
-use alloc::rc::Rc;
-
-pub struct Hole<'a, T: ?Sized> {
-    hole: Option<&'a mut Rc<T>>,
+pub struct Hole<'a, T: Unpin> {
+    hole: Option<&'a mut T>,
 }
 
-impl<'a, T: ?Sized> Hole<'a, T> {
-    pub fn new(rc: &'a mut Rc<T>) -> (Self, Rc<T>) {
-        let val = unsafe { core::ptr::read(rc) };
-        (Self { hole: Some(rc) }, val)
+impl<'a, T: Unpin> Hole<'a, T> {
+    pub fn new(target: &'a mut T) -> (Self, T) {
+        let val = unsafe { core::ptr::read(target) };
+        (Self { hole: Some(target) }, val)
     }
-    pub fn fill(mut self, val: Rc<T>) {
+    pub fn fill(mut self, val: T) {
         if let Some(hole) = self.hole.take() {
             unsafe {
                 core::ptr::write(hole, val);
+            }
+        } else {
+            #[cfg(debug_assertions)]
+            panic!("hole filled twice");
+            #[cfg(not(debug_assertions))]
+            unsafe {
+                core::hint::unreachable_unchecked();
             }
         }
     }
 }
 
-impl<'a, T: ?Sized> Drop for Hole<'a, T> {
+impl<'a, T: Unpin> Drop for Hole<'a, T> {
     fn drop(&mut self) {
         if self.hole.is_some() {
             panic!("unfilled hole detected");

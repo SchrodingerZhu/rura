@@ -21,6 +21,18 @@ fn fmt_separated<T: Display, P: Display>(
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(Box<str>);
 
+impl From<&str> for Ident {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Member {
+    Named(Ident),
+    Index(usize),
+}
+
 impl Ident {
     pub fn new(s: impl Into<Box<str>>) -> Self {
         Self(s.into())
@@ -41,7 +53,16 @@ impl AsRef<str> for Ident {
 
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct QualifiedName(Box<[Box<str>]>);
+pub struct QualifiedName(Box<[Ident]>);
+
+impl QualifiedName {
+    pub fn iter(&self) -> impl Iterator<Item = &Ident> {
+        self.0.iter()
+    }
+    pub fn new(names: Box<[Ident]>) -> Self {
+        Self(names)
+    }
+}
 
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

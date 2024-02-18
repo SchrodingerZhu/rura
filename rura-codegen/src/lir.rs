@@ -1,5 +1,6 @@
+use proc_macro2::TokenStream;
 use quote::quote;
-use rura_core::{types::SurfaceType, Ident, QualifiedName};
+use rura_core::{types::LirType, Ident, Member, QualifiedName};
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
  */
@@ -8,16 +9,191 @@ use rura_core::{types::SurfaceType, Ident, QualifiedName};
 pub struct Block(pub Vec<Lir>);
 
 pub enum ArithMode {
-    Normal,
+    Default,
     Wrapping,
     Saturating,
 }
 
+pub enum MakeMutReceiver {
+    MutationHole {
+        target: Member,
+        hole: usize,
+        value: usize,
+    },
+    Value {
+        target: Member,
+        value: usize,
+    },
+}
+
+impl MakeMutReceiver {
+    pub fn is_named(&self) -> bool {
+        matches!(
+            self,
+            Self::MutationHole {
+                target: Member::Named(_),
+                ..
+            } | Self::Value {
+                target: Member::Named(_),
+                ..
+            }
+        )
+    }
+}
+
+pub enum EliminationStyle {
+    Unwrap {
+        fields: Box<[(Member, usize)]>,
+        token: usize,
+    },
+    Mutation {
+        holes: Box<[MakeMutReceiver]>,
+        value: usize,
+    },
+    Fixpoint(usize),
+}
+
+fn member_list(members: &[(Member, usize)]) -> TokenStream {
+    let fields = members.iter().map(|(member, value)| match member {
+        Member::Named(name) => {
+            let name = ident(name);
+            let value = variable(*value);
+            quote! { #name : #value }
+        }
+        Member::Index(_) => {
+            let value = variable(*value);
+            quote! { #value }
+        }
+    });
+    if matches!(members[0].0, Member::Named(_)) {
+        quote! {
+            { #(#fields),* }
+        }
+    } else {
+        quote! {
+            ( #(#fields),* )
+        }
+    }
+}
+
+fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
+    let fields = holes.iter().map(|hole| match hole {
+        MakeMutReceiver::MutationHole {
+            target: Member::Named(name),
+            value,
+            ..
+        } => {
+            let name = ident(name);
+            let value = variable(*value);
+            quote! { #name: ref mut #value }
+        }
+        MakeMutReceiver::MutationHole {
+            target: Member::Index(_),
+            value,
+            ..
+        } => {
+            let value = variable(*value);
+            quote! { ref mut #value }
+        }
+        MakeMutReceiver::Value {
+            target: Member::Named(name),
+            value,
+        } => {
+            let name = ident(name);
+            let value = variable(*value);
+            quote! { #name: #value }
+        }
+        MakeMutReceiver::Value {
+            target: Member::Index(_),
+            value,
+        } => {
+            let value = variable(*value);
+            quote! { #value }
+        }
+    });
+    if holes[0].is_named() {
+        quote! {
+            { #(#fields),* }
+        }
+    } else {
+        quote! {
+            ( #(#fields),* )
+        }
+    }
+}
+
+fn hole_declarations(holes: &[MakeMutReceiver]) -> impl Iterator<Item = TokenStream> + '_ {
+    holes.iter().filter_map(|hole| {
+        let MakeMutReceiver::MutationHole { hole, value, .. } = hole else {
+            return None;
+        };
+        Some({
+            let value = variable(*value);
+            let hole = variable(*hole);
+            quote! {
+                let (#hole, #value) = ::rura_runtime::Hole::new(#value);
+            }
+        })
+    })
+}
+
+impl EliminationStyle {
+    pub fn lower_to_rust(&self, old_value: usize, ctor: &QualifiedName) -> TokenStream {
+        match self {
+            Self::Fixpoint(x) => {
+                let x = variable(*x);
+                let old_value = variable(old_value);
+                quote! {
+                    let #x = #old_value;
+                }
+            }
+            Self::Unwrap { fields, token } => {
+                let qualified_name = qualified_name(ctor);
+                let fields = member_list(fields);
+                let token = variable(*token);
+                let old_value = variable(old_value);
+                quote! {
+                    let (#token, #qualified_name #fields) = #old_value.unwrap_for_reuse() else {
+                        unsafe { ::core::hint::unreachable_unchecked() }
+                    };
+                }
+            }
+            Self::Mutation { holes, value } => {
+                let qualified_name = qualified_name(ctor);
+                let value = variable(*value);
+                let old_value = variable(old_value);
+                let fields = make_mut_receivers(holes);
+                let holes = hole_declarations(holes);
+                quote! {
+                    let mut #value = #old_value;
+                    let #qualified_name #fields = *#old_value.make_mut() else {
+                        unsafe { ::core::hint::unreachable_unchecked() }
+                    };
+                    #(#holes)*
+                }
+            }
+        }
+    }
+}
+
 pub struct InductiveEliminator {
-    pub ctor: Ident,
-    pub is_imcomplete: bool,
-    pub args: Vec<(Ident, usize)>,
+    pub ctor: QualifiedName,
+    pub style: EliminationStyle,
     pub body: Block,
+}
+
+impl InductiveEliminator {
+    pub fn lower_to_rust(&self, old_value: usize) -> TokenStream {
+        let ctor = qualified_name(&self.ctor);
+        let body = self.body.0.iter().map(|lir| lir.lower_to_rust());
+        let header = self.style.lower_to_rust(old_value, &self.ctor);
+        quote! {
+            #ctor { .. } => {
+                #header
+                #(#body)*
+            }
+        }
+    }
 }
 
 pub struct TupleEliminator {
@@ -28,7 +204,7 @@ pub struct CtorCall {
     /// Identifier of the inductive type
     pub type_name: QualifiedName,
     /// Type parameters
-    pub type_params: Box<[SurfaceType]>,
+    pub type_params: Box<[LirType]>,
     /// Identifier of the constructor
     pub ctor_idx: usize,
     /// Identifiers of the arguments
@@ -109,7 +285,7 @@ pub struct IfThenElse {
 
 pub struct ClosureCreation {
     /// parameters
-    pub parameters: Box<[SurfaceType]>,
+    pub parameters: Box<[LirType]>,
     /// values to capture
     pub capture: Vec<usize>,
     /// body
@@ -153,7 +329,7 @@ pub enum Lir {
         /// Identifier of the inductive type
         inductive: usize,
         /// Identifier of the eliminator
-        eliminator: Vec<InductiveEliminator>,
+        eliminator: Box<[InductiveEliminator]>,
     },
 
     Ref {
@@ -172,7 +348,7 @@ pub enum Lir {
     /// Tuple creation
     Tuple {
         /// Identifiers of the elements
-        elements: Vec<usize>,
+        elements: Box<[usize]>,
         /// Identifier of the result
         result: usize,
     },
@@ -206,6 +382,13 @@ fn variable(id: usize) -> proc_macro2::Ident {
 fn ident(id: &Ident) -> proc_macro2::Ident {
     let id = id.as_ref();
     proc_macro2::Ident::new(id, proc_macro2::Span::call_site())
+}
+
+fn qualified_name(name: &QualifiedName) -> proc_macro2::TokenStream {
+    let name = name.iter().map(ident);
+    quote! {
+        #(::#name)*
+    }
 }
 
 impl Lir {
@@ -244,6 +427,18 @@ impl Lir {
                     let #result = (#( #elements ),*);
                 }
             }
+            Lir::InductiveElimination {
+                inductive,
+                eliminator,
+            } => {
+                let arms = eliminator.iter().map(|elim| elim.lower_to_rust(*inductive));
+                let inductive = variable(*inductive);
+                quote! {
+                    match #inductive {
+                        #(#arms)*
+                    }
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -269,7 +464,7 @@ mod tests {
     #[test]
     fn test_tuple_lower_to_rust() {
         well_formed_lower(Lir::Tuple {
-            elements: vec![1, 2],
+            elements: vec![1, 2].into_boxed_slice(),
             result: 3,
         });
     }
@@ -291,6 +486,60 @@ mod tests {
             token: None,
         });
     }
+
+    #[test]
+    fn test_inductive_elimination_fixpoint_lower_to_rust() {
+        well_formed_lower(Lir::InductiveElimination {
+            inductive: 1,
+            eliminator: vec![InductiveEliminator {
+                ctor: QualifiedName::new(Box::new([Ident::new("Some")])),
+                style: EliminationStyle::Fixpoint(2),
+                body: Block(vec![Lir::Return { value: 2 }]),
+            }]
+            .into_boxed_slice(),
+        });
+    }
+
+    #[test]
+    fn test_inductive_elimination_unwrap_lower_to_rust() {
+        well_formed_lower(Lir::InductiveElimination {
+            inductive: 1,
+            eliminator: vec![InductiveEliminator {
+                ctor: QualifiedName::new(Box::new([Ident::new("Some")])),
+                style: EliminationStyle::Unwrap {
+                    fields: vec![(Member::Named(Ident::new("x")), 2)].into_boxed_slice(),
+                    token: 3,
+                },
+                body: Block(vec![]),
+            }]
+            .into_boxed_slice(),
+        });
+    }
+
+    #[test]
+    fn test_inductive_elimination_mutation_lower_to_rust() {
+        well_formed_lower(Lir::InductiveElimination {
+            inductive: 1,
+            eliminator: vec![InductiveEliminator {
+                ctor: QualifiedName::new(Box::new([Ident::new("Some")])),
+                style: EliminationStyle::Mutation {
+                    holes: vec![
+                        MakeMutReceiver::MutationHole {
+                            target: Member::Named(Ident::new("x")),
+                            hole: 2,
+                            value: 3,
+                        },
+                        MakeMutReceiver::Value {
+                            target: Member::Named(Ident::new("y")),
+                            value: 4,
+                        },
+                    ]
+                    .into_boxed_slice(),
+                    value: 5,
+                },
+                body: Block(vec![Lir::Return { value: 5 }]),
+            }]
+            .into_boxed_slice(),
+        });
+    }
 }
-
-

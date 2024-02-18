@@ -157,7 +157,7 @@ impl Display for RuraType {
 
 /// Surface Type is the type without detailed structure
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum SurfaceType {
+pub enum LirType {
     /// fn (A, B) -> C
     Closure(Box<[Self]>, Box<Self>),
     /// usize, i32, etc
@@ -172,4 +172,8 @@ pub enum SurfaceType {
     Tuple(Box<[Self]>),
     /// A type variable in context
     TypeVar(TypeVar),
+    /// Hole of mutable borrows
+    Hole(Box<Self>),
+    /// Immutable reference
+    Ref(Box<Self>),
 }

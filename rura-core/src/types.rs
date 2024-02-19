@@ -101,7 +101,7 @@ impl Display for ClosureType {
 pub enum TypeVar {
     Plain(Ident),
     Asscoiated(Ident, Ident),
-    AsExpr(Box<Self>, Ident, Ident),
+    AsExpr(Box<Self>, QualifiedName, Ident),
 }
 
 impl Display for TypeVar {

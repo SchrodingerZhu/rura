@@ -52,7 +52,7 @@ impl AsRef<str> for Ident {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QualifiedName(Box<[Ident]>);
 
 impl QualifiedName {

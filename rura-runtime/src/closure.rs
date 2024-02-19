@@ -1,8 +1,8 @@
-use core::{any::Any, mem::MaybeUninit};
+use core::mem::MaybeUninit;
 
-use alloc::{rc::Rc, vec::Vec};
+use alloc::rc::Rc;
 
-use crate::{Exclusivity, MemoryReuse};
+use crate::MemoryReuse;
 
 pub trait Params {
     type Head;
@@ -48,9 +48,7 @@ impl<P: PartialParams + Clone, R> Clone for Thunk<P, R> {
     }
 }
 pub trait BoxedClosure<P: Params, R> {
-    fn apply(self: Rc<Self>, param: P::Head) -> Rc<dyn BoxedClosure<P::Tail, R>>
-    where
-        P::Head: Applicable;
+    fn apply(self: Rc<Self>, param: P::Head) -> Rc<dyn BoxedClosure<P::Tail, R>>;
     fn eval(self: Rc<Self>) -> R
     where
         P: Params<Head = ()>;
@@ -110,10 +108,7 @@ impl<P, R> Clone for Closure<P, R> {
 }
 
 impl<P: Params, R> Closure<P, R> {
-    pub fn apply(self, param: P::Head) -> Closure<P::Tail, R>
-    where
-        P::Head: Applicable,
-    {
+    pub fn apply(self, param: P::Head) -> Closure<P::Tail, R> {
         Closure(self.0.apply(param))
     }
 
@@ -126,10 +121,7 @@ impl<P: Params, R> Closure<P, R> {
 }
 
 #[cfg(feature = "nightly")]
-impl<P: Params, R> FnOnce<(P::Head,)> for Closure<P, R>
-where
-    P::Head: Applicable,
-{
+impl<P: Params, R> FnOnce<(P::Head,)> for Closure<P, R> {
     type Output = Closure<P::Tail, R>;
     extern "rust-call" fn call_once(self, x: (P::Head,)) -> Self::Output {
         self.apply(x.0)
@@ -144,250 +136,9 @@ impl<P: Params<Head = ()>, R> FnOnce<()> for Closure<P, R> {
     }
 }
 
-#[repr(C)]
-pub union ScalarPack {
-    i8: i8,
-    i16: i16,
-    i32: i32,
-    i64: i64,
-    u8: u8,
-    u16: u16,
-    u32: u32,
-    u64: u64,
-    f32: f32,
-    f64: f64,
-    usize: usize,
-    char: char,
-    bool: bool,
-    unit: (),
-}
-
-#[derive(Clone)]
-pub enum BoxedPack {
-    U128(u128),
-    I128(i128),
-    Object(Rc<dyn Any>),
-}
-
-impl Clone for ScalarPack {
-    fn clone(&self) -> Self {
-        unsafe { core::ptr::read(self) }
-    }
-}
-
-pub struct ErasedThunk<R> {
-    code: fn(Vec<ScalarPack>, Vec<BoxedPack>) -> R,
-    scalar: Vec<ScalarPack>,
-    boxed: Vec<BoxedPack>,
-}
-
-impl<R> Clone for ErasedThunk<R> {
-    fn clone(&self) -> Self {
-        ErasedThunk {
-            code: self.code,
-            scalar: self.scalar.clone(),
-            boxed: self.boxed.clone(),
-        }
-    }
-}
-
-impl<R> ErasedThunk<R> {
-    pub fn new(fn_ptr: fn(Vec<ScalarPack>, Vec<BoxedPack>) -> R) -> Rc<Self> {
-        Rc::new(ErasedThunk {
-            code: fn_ptr,
-            scalar: Vec::new(),
-            boxed: Vec::new(),
-        })
-    }
-
-    pub fn apply_scalar(mut self: Rc<Self>, arg: ScalarPack) -> Rc<Self> {
-        self.make_mut().scalar.push(arg);
-        self
-    }
-
-    pub fn apply_i128(mut self: Rc<Self>, arg: i128) -> Rc<Self> {
-        self.make_mut().boxed.push(BoxedPack::I128(arg));
-        self
-    }
-
-    pub fn apply_u128(mut self: Rc<Self>, arg: u128) -> Rc<Self> {
-        self.make_mut().boxed.push(BoxedPack::U128(arg));
-        self
-    }
-
-    pub fn apply_object<T: 'static>(mut self: Rc<Self>, arg: Rc<T>) -> Rc<Self> {
-        self.make_mut().boxed.push(BoxedPack::Object(arg));
-        self
-    }
-
-    pub fn apply_cloure<P: Params, T>(mut self: Rc<Self>, arg: Closure<P, T>) -> Rc<Self> {
-        self.make_mut()
-            .boxed
-            // this is extremely dirty but miri does seem to be happy with it
-            .push(BoxedPack::Object(unsafe { core::mem::transmute(arg) }));
-        self
-    }
-
-    pub fn eval(self: Rc<Self>) -> R {
-        let thunk = Rc::unwrap_or_clone(self);
-        (thunk.code)(thunk.scalar, thunk.boxed)
-    }
-}
-
-pub trait Applicable {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>>;
-}
-
-impl Applicable for i8 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { i8: self })
-    }
-}
-
-impl Applicable for i16 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { i16: self })
-    }
-}
-
-impl Applicable for i32 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { i32: self })
-    }
-}
-
-impl Applicable for i64 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { i64: self })
-    }
-}
-
-impl Applicable for u8 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { u8: self })
-    }
-}
-
-impl Applicable for u16 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { u16: self })
-    }
-}
-
-impl Applicable for u32 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { u32: self })
-    }
-}
-
-impl Applicable for u64 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { u64: self })
-    }
-}
-
-impl Applicable for f32 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { f32: self })
-    }
-}
-
-impl Applicable for f64 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { f64: self })
-    }
-}
-
-impl Applicable for usize {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { usize: self })
-    }
-}
-
-impl Applicable for char {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { char: self })
-    }
-}
-
-impl Applicable for bool {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { bool: self })
-    }
-}
-
-impl Applicable for () {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_scalar(ScalarPack { unit: self })
-    }
-}
-
-impl Applicable for i128 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_i128(self)
-    }
-}
-
-impl Applicable for u128 {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_u128(self)
-    }
-}
-
-impl<T: 'static> Applicable for Rc<T> {
-    fn apply<R>(self, closure: Rc<ErasedThunk<R>>) -> Rc<ErasedThunk<R>> {
-        closure.apply_object(self)
-    }
-}
-
-impl<P: Params, R> Applicable for Closure<P, R> {
-    fn apply<T>(self, closure: Rc<ErasedThunk<T>>) -> Rc<ErasedThunk<T>> {
-        closure.apply_cloure(self)
-    }
-}
-
-impl<P: Params, R: 'static> BoxedClosure<P, R> for ErasedThunk<R> {
-    fn apply(self: Rc<Self>, param: P::Head) -> Rc<dyn BoxedClosure<P::Tail, R>>
-    where
-        P::Head: Applicable,
-    {
-        Applicable::apply(param, self)
-    }
-    fn eval(self: Rc<Self>) -> R
-    where
-        P: Params<Head = ()>,
-    {
-        self.eval()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_erased_closure_push_closure() {
-        let f = ErasedThunk::new(|scalar, objects| {
-            let a = unsafe { scalar[0].i32 };
-            let b = unsafe { scalar[1].i32 };
-            let mut objects = objects.into_iter();
-            let Some(BoxedPack::Object(obj)) = objects.next() else {
-                unreachable!()
-            };
-            let obj: Closure<(i32, i32), i32> = unsafe { core::mem::transmute(obj) };
-            obj.apply(a).apply(b).eval()
-        });
-        f.clone().apply_scalar(ScalarPack { i32: 1 });
-        let g = f
-            .apply_scalar(ScalarPack { i32: 1 })
-            .apply_scalar(ScalarPack { i32: 2 })
-            .apply_cloure(Closure(Rc::new(Thunk {
-                code: |(x, y): (i32, i32)| x + y,
-                params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
-            })));
-        let h = g.clone();
-        assert_eq!(h.eval(), 3);
-    }
 
     fn test_closure(f: Closure<(i32, i32), i32>, x: i32, y: i32) -> Closure<(), i32> {
         f.apply(x).apply(y)
@@ -443,25 +194,5 @@ mod test {
         let h = g.clone();
         assert_eq!(g.apply(2).apply(2).apply(3).eval(), 13);
         assert_eq!(h.apply(4).apply(5).apply(6).eval(), 21);
-    }
-
-    #[test]
-    fn erased_thunk_as_closure() {
-        let f = ErasedThunk::new(|scalar, objects| {
-            let a = unsafe { scalar[0].i32 };
-            let b = unsafe { scalar[1].i32 };
-            let mut objects = objects.into_iter();
-            let Some(BoxedPack::Object(obj)) = objects.next() else {
-                unreachable!()
-            };
-            let obj: Closure<(i32, i32), i32> = unsafe { core::mem::transmute(obj) };
-            obj.apply(a).apply(b).eval()
-        });
-        let f: Rc<dyn BoxedClosure<(i32, i32, Closure<(i32, i32), i32>), i32>> = f.clone();
-        let g = f.apply(1).apply(2).apply(Closure(Rc::new(Thunk {
-            code: |(x, y)| x + y,
-            params: (Hole(MaybeUninit::uninit()), Hole(MaybeUninit::uninit())),
-        })));
-        assert_eq!(g.eval(), 3);
     }
 }

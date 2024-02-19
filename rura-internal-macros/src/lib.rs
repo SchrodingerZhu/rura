@@ -44,9 +44,10 @@ fn generate_from_impl(total_cnt: usize) -> TokenStream {
     });
 
     quote::quote! {
-        impl<#(#full_ident : Clone + 'static,)*R : 'static> From<fn((#(#full_ident,)*)) -> R>
-        for Closure<(#(#full_ident,)*), R>{
-            fn from(code: fn((#(#full_ident,)*)) -> R) -> Self {
+        impl<#(#full_ident : Clone + 'static,)*R : 'static, F> From<F> for Closure<(#(#full_ident,)*), R>
+            where F : Fn((#(#full_ident,)*)) -> R + Clone + 'static
+        {
+            fn from(code: F) -> Self {
                 Closure (Rc::new(Thunk {
                     code,
                     params: (#(#uninit,)*),

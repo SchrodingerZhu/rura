@@ -14,7 +14,7 @@ Rura is a purely functional Rust dialect, optimized through reuse analysis and m
 
 ## Motivation
 
-In [Koka] and [Lean], Reuse analysis is supported by a lightweight runtime with reference counting and type-erased
+In [Koka] and [Lean], reuse analysis is supported by a lightweight runtime with reference counting and type-erased
 objects. This project attempts to create a functional programming language that directly lowers into Rust. In this way,
 we can explore the possibility to embed reuse analysis into higher-level languages.
 

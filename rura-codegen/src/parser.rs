@@ -276,6 +276,24 @@ fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "apply",
+        skip_space(parse_operand),
+        ",",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(op, _, _, closure, _, arg, _)| Lir::Apply {
+            closure,
+            arg,
+            result: op,
+        })
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -409,6 +427,20 @@ mod test {
             result,
             Lir::ConstantScalar {
                 value: Box::new(ScalarConstant::USize(3)),
+                result: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_apply_instr() {
+        let mut input = "%1 = apply %2, %3;";
+        let result = parse_apply_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::Apply {
+                closure: 2,
+                arg: 3,
                 result: 1
             }
         );

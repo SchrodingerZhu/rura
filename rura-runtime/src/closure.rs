@@ -159,6 +159,19 @@ mod test {
     }
 
     #[test]
+    fn test_with_clonable_context() {
+        use alloc::string::String;
+        let string = Rc::new(String::from("123"));
+        let f: Closure<(Rc<String>,), Rc<String>> = Closure::from(move |(mut a,): (Rc<String>,)| {
+            Rc::make_mut(&mut a).push_str(string.as_str());
+            a
+        });
+        let g = f.clone();
+        assert_eq!(f.apply(Rc::new("132".into())).eval().as_str(), "132123");
+        assert_eq!(g.apply(Rc::new("444".into())).eval().as_str(), "444123");
+    }
+
+    #[test]
     fn test_long_tuple() {
         let f = |(a, b, c, d, e, f): (i32, i32, i32, i32, i32, i32)| a + b + c + d + e + f;
         let f = Closure::from(f);

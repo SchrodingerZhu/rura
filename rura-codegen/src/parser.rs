@@ -80,12 +80,14 @@ fn identifier(input: &mut &str) -> PResult<Ident> {
     )
         .recognize()
         .map(Ident::new)
+        .context(expect("identifier"))
         .parse_next(input)
 }
 
 fn qualified_name(input: &mut &str) -> PResult<QualifiedName> {
     combinator::separated(1.., identifier, "::")
         .map(|idents: Vec<Ident>| QualifiedName::new(idents.into_boxed_slice()))
+        .context(expect("qualified name"))
         .parse_next(input)
 }
 
@@ -145,6 +147,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         parse_closure_type,
         parse_object_type,
     ))
+    .context(expect("lir type"))
     .parse_next(i)
 }
 

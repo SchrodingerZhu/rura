@@ -26,7 +26,7 @@ We use the same notion `!` for bottom type (never type) as Rust. This represents
 
 ## Tuples
 
-A Tuple is of the form `(A, B, C, D, ...)` where `A, B, C, D, ...` are other admissible types.
+A Tuple is of the form `(A, B, C, D, ...)` where `A, B, C, D, ...` are other admissible types. Tuples are stored and passed without boxing.
 
 ## Inductive Types
 

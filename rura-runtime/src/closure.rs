@@ -162,7 +162,7 @@ mod test {
     fn test_with_clonable_context() {
         use alloc::string::String;
         let string = Rc::new(String::from("123"));
-        let f: Closure<(Rc<String>,), Rc<String>> = Closure::from(move |(mut a,): (Rc<String>,)| {
+        let f = Closure::from(move |(mut a,): (Rc<String>,)| {
             Rc::make_mut(&mut a).push_str(string.as_str());
             a
         });

@@ -9,6 +9,8 @@ edition = "2021"
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
 rura-core = { path = "../rura-core" }
+unicode-ident = "1.0.12"
+winnow = { version = "0.6.1", features = ["simd"] }
 
 [dev-dependencies]
 prettyplease = "0.2.16"

@@ -93,15 +93,14 @@ fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
 }
 
 fn hole_declarations(holes: &[MakeMutReceiver]) -> impl Iterator<Item = TokenStream> + '_ {
-    holes.iter().filter_map(|hole| {
+    holes.iter().map(|hole| {
         let MakeMutReceiver { hole, value, .. } = hole;
-        Some({
-            let value = variable(*value);
-            let hole = variable(*hole);
-            quote! {
-                let (#hole, #value) = ::rura_runtime::Hole::new(#value);
-            }
-        })
+
+        let value = variable(*value);
+        let hole = variable(*hole);
+        quote! {
+            let (#hole, #value) = ::rura_runtime::Hole::new(#value);
+        }
     })
 }
 
@@ -254,7 +253,7 @@ pub struct IfThenElse {
 pub struct ClosureCreation {
     /// parameters
     pub parameters: Box<[LirType]>,
-    /// values to capture
+    /// TODO: rework capture logic (can we use rust's capture logic?)
     pub capture: Vec<usize>,
     /// body
     pub body: Block,

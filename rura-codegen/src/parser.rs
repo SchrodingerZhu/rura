@@ -1,11 +1,12 @@
 #![allow(unused)]
 use rura_core::types::{LirType, ScalarType};
 use rura_core::{types::TypeVar, Ident, QualifiedName};
+use winnow::ascii::alpha1;
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::prelude::*;
 use winnow::*;
 
-use crate::lir::{Lir, ScalarConstant};
+use crate::lir::{ArithMode, BinOp, BinaryOp, Lir, ScalarConstant, UnOp, UnaryOp};
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
     ("//", winnow::ascii::till_line_ending)
@@ -334,6 +335,57 @@ fn parse_tuple_elim_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_unary_op(i: &mut &str, x: char, op: UnOp) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space('='),
+        x,
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(result, _, _, operand, _)| {
+            Lir::UnaryOp(Box::new(UnaryOp {
+                op,
+                operand,
+                result,
+            }))
+        })
+        .parse_next(i)
+}
+
+fn parse_arith_mode(i: &mut &str) -> PResult<ArithMode> {
+    ('[', skip_space(alpha1), ']')
+        .verify_map(|(_, data, _)| match data {
+            "default" => Some(ArithMode::Default),
+            "wrapping" => Some(ArithMode::Wrapping),
+            "saturating" => Some(ArithMode::Saturating),
+            _ => None,
+        })
+        .parse_next(i)
+}
+
+fn parse_binary_op(i: &mut &str, x: char, op: BinOp) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space('='),
+        parse_operand,
+        skip_space(x),
+        parse_operand,
+        skip_space(combinator::opt(parse_arith_mode)),
+        ";",
+    )
+        .map(|(result, _, lhs, _, rhs, mode, _)| {
+            Lir::BinaryOp(Box::new(BinaryOp {
+                op,
+                mode,
+                lhs,
+                rhs,
+                result,
+            }))
+        })
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -508,6 +560,36 @@ mod test {
                 tuple: 3,
                 eliminator: Box::new([1, 2])
             }
+        );
+    }
+
+    #[test]
+    fn test_parse_unary_neg_instr() {
+        let mut input = "%1 = - %2;";
+        let result = parse_unary_op(&mut input, '-', UnOp::Neg).unwrap();
+        assert_eq!(
+            result,
+            Lir::UnaryOp(Box::new(UnaryOp {
+                op: UnOp::Neg,
+                operand: 2,
+                result: 1
+            }))
+        );
+    }
+
+    #[test]
+    fn test_parse_binary_wrapping_add_instr() {
+        let mut input = "%1 = %2 + %3 [wrapping];";
+        let result = parse_binary_op(&mut input, '+', BinOp::Add).unwrap();
+        assert_eq!(
+            result,
+            Lir::BinaryOp(Box::new(BinaryOp {
+                op: BinOp::Add,
+                mode: Some(ArithMode::Wrapping),
+                lhs: 2,
+                rhs: 3,
+                result: 1
+            }))
         );
     }
 }

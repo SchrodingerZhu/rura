@@ -249,12 +249,12 @@ pub struct CtorCall {
     /// Identifier of the result
     pub result: usize,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnOp {
     Neg,
     Not,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinOp {
     Add,
     Sub,
@@ -280,7 +280,7 @@ pub struct BinaryOp {
     /// The binary operation to perform
     pub op: BinOp,
     /// Arithmetic mode (only relevant for arithmetic operations)
-    pub mode: ArithMode,
+    pub mode: Option<ArithMode>,
     /// Identifier of the left-hand side operand
     pub lhs: usize,
     /// Identifier of the right-hand side operand

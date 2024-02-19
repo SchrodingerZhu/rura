@@ -1,22 +1,23 @@
 #![allow(unused)]
 use rura_core::types::LirType;
 use rura_core::{types::TypeVar, Ident, QualifiedName};
+use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::*;
 
-fn eol_comment<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<(), E> {
+fn eol_comment(i: &mut &str) -> PResult<()> {
     ("//", winnow::ascii::till_line_ending)
         .void() // Output is thrown away.
         .parse_next(i)
 }
 
-fn multiline_comment<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<(), E> {
+fn multiline_comment(i: &mut &str) -> PResult<()> {
     ("/*", token::take_until(0.., "*/"), "*/")
         .void() // Output is thrown away.
         .parse_next(i)
 }
 
-fn ws_or_comment<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<(), E> {
+fn ws_or_comment(i: &mut &str) -> PResult<()> {
     combinator::repeat(
         0..,
         combinator::alt((ascii::multispace1.void(), eol_comment, multiline_comment)),
@@ -26,22 +27,22 @@ fn ws_or_comment<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
 /// trailing whitespace, returning the output of `inner`.
-fn skip_space<'a, F, O, E: error::ParserError<&'a str>>(inner: F) -> impl Parser<&'a str, O, E>
+fn skip_space<'a, F, O>(inner: F) -> impl Parser<&'a str, O, ContextError>
 where
-    F: Parser<&'a str, O, E>,
+    F: Parser<&'a str, O, ContextError>,
 {
     combinator::delimited(ws_or_comment, inner, ws_or_comment)
 }
 
-fn parse_unit<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<LirType, E> {
+fn parse_unit(i: &mut &str) -> PResult<LirType> {
     "()".map(|_| LirType::Unit).parse_next(i)
 }
 
-fn parse_bottom<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<LirType, E> {
+fn parse_bottom(i: &mut &str) -> PResult<LirType> {
     "!".map(|_| LirType::Bottom).parse_next(i)
 }
 
-fn parse_scalar<'a, E: error::ParserError<&'a str>>(i: &mut &'a str) -> PResult<LirType, E> {
+fn parse_scalar(i: &mut &str) -> PResult<LirType> {
     use combinator::{empty, fail};
     use rura_core::types::ScalarType::*;
     use LirType::Scalar;
@@ -136,7 +137,7 @@ mod test {
     #[test]
     fn test_eol_comment() {
         let mut input = "// Hello, world!\n";
-        eol_comment::<()>(&mut input).unwrap();
+        eol_comment(&mut input).unwrap();
         assert_eq!(input, "\n");
     }
     #[test]
@@ -147,7 +148,7 @@ mod test {
           213
           // Hello, world!
         "#;
-        let result = skip_space::<_, _, winnow::error::ErrorKind>(ascii::digit0).parse(input);
+        let result = skip_space(ascii::digit0).parse(input);
         assert_eq!(result, Ok("213"));
     }
 

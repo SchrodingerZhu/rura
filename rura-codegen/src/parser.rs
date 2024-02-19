@@ -42,7 +42,7 @@ fn parse_bottom(i: &mut &str) -> PResult<LirType> {
     "!".map(|_| LirType::Bottom).parse_next(i)
 }
 
-fn parse_scalar(i: &mut &str) -> PResult<LirType> {
+fn parse_scalar_type(i: &mut &str) -> PResult<LirType> {
     use combinator::{empty, fail};
     use rura_core::types::ScalarType::*;
     use LirType::Scalar;
@@ -132,7 +132,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     combinator::alt((
         parse_unit,
         parse_bottom,
-        parse_scalar,
+        parse_scalar_type,
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,

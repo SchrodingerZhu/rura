@@ -1,9 +1,11 @@
 #![allow(unused)]
-use rura_core::types::LirType;
+use rura_core::types::{LirType, ScalarType};
 use rura_core::{types::TypeVar, Ident, QualifiedName};
-use winnow::error::ContextError;
+use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::prelude::*;
 use winnow::*;
+
+use crate::lir::{Lir, ScalarConstant};
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
     ("//", winnow::ascii::till_line_ending)
@@ -42,27 +44,30 @@ fn parse_bottom(i: &mut &str) -> PResult<LirType> {
     "!".map(|_| LirType::Bottom).parse_next(i)
 }
 
-fn parse_scalar_type(i: &mut &str) -> PResult<LirType> {
+fn expect(x: &'static str) -> StrContext {
+    StrContext::Expected(StrContextValue::Description(x))
+}
+
+fn parse_scalar_type(i: &mut &str) -> PResult<ScalarType> {
     use combinator::{empty, fail};
     use rura_core::types::ScalarType::*;
-    use LirType::Scalar;
     combinator::dispatch! { ascii::alphanumeric1;
-        "i8" => empty.value(Scalar(I8)),
-        "i16" => empty.value(Scalar(I16)),
-        "i32" => empty.value(Scalar(I32)),
-        "i64" => empty.value(Scalar(I64)),
-        "isize" => empty.value(Scalar(ISize)),
-        "i128" => empty.value(Scalar(I128)),
-        "u8" => empty.value(Scalar(U8)),
-        "u16" => empty.value(Scalar(U16)),
-        "u32" => empty.value(Scalar(U32)),
-        "u64" => empty.value(Scalar(U64)),
-        "usize" => empty.value(Scalar(USize)),
-        "u128" => empty.value(Scalar(U128)),
-        "f32" => empty.value(Scalar(F32)),
-        "f64" => empty.value(Scalar(F64)),
-        "bool" => empty.value(Scalar(Bool)),
-        "char" => empty.value(Scalar(Char)),
+        "i8" => empty.value(I8),
+        "i16" => empty.value(I16),
+        "i32" => empty.value(I32),
+        "i64" => empty.value(I64),
+        "isize" => empty.value(ISize),
+        "i128" => empty.value(I128),
+        "u8" => empty.value(U8),
+        "u16" => empty.value(U16),
+        "u32" => empty.value(U32),
+        "u64" => empty.value(U64),
+        "usize" => empty.value(USize),
+        "u128" => empty.value(U128),
+        "f32" => empty.value(F32),
+        "f64" => empty.value(F64),
+        "bool" => empty.value(Bool),
+        "char" => empty.value(Char),
         _ => fail,
     }
     .parse_next(i)
@@ -132,7 +137,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     combinator::alt((
         parse_unit,
         parse_bottom,
-        parse_scalar_type,
+        parse_scalar_type.map(LirType::Scalar),
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
@@ -169,6 +174,102 @@ fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
         .map(|(_, nested, _, qn, _, _, id)| TypeVar::AsExpr(Box::new(nested), qn, id));
     ("@", combinator::alt((associated, plain, as_expr)))
         .map(|x| x.1)
+        .parse_next(i)
+}
+
+fn parse_operand(i: &mut &str) -> PResult<usize> {
+    combinator::preceded("%", ascii::digit1.try_map(|x: &str| x.parse()))
+        .map(|x: usize| x)
+        .parse_next(i)
+}
+
+fn parse_typed_char(i: &mut &str) -> PResult<ScalarConstant> {
+    (ascii::digit1, skip_space(":"), skip_space("char"))
+        .try_map(|(data, _, _)| data.parse::<u32>())
+        .verify_map(char::from_u32)
+        .map(ScalarConstant::Char)
+        .parse_next(i)
+}
+
+fn parse_typed_bool(i: &mut &str) -> PResult<ScalarConstant> {
+    (ascii::alpha1, skip_space(":"), skip_space("bool"))
+        .try_map(|(data, _, _)| data.parse::<bool>())
+        .map(ScalarConstant::Bool)
+        .parse_next(i)
+}
+
+fn parse_typed_f32(i: &mut &str) -> PResult<ScalarConstant> {
+    (ascii::float, skip_space(":"), skip_space("f32"))
+        .map(|(data, _, _)| ScalarConstant::F32(data))
+        .parse_next(i)
+}
+
+fn parse_typed_f64(i: &mut &str) -> PResult<ScalarConstant> {
+    (ascii::float, skip_space(":"), skip_space("f64"))
+        .map(|(data, _, _)| ScalarConstant::F64(data))
+        .parse_next(i)
+}
+
+macro_rules! parse_typed_int {
+    (signed $name:ident $ctor:ident $tag:literal) => {
+        fn $name(i: &mut &str) -> PResult<ScalarConstant> {
+            (ascii::dec_int, skip_space(":"), skip_space($tag))
+                .map(|(data, _, _)| ScalarConstant::$ctor(data))
+                .parse_next(i)
+        }
+    };
+    (unsigned $name:ident $ctor:ident $tag:literal) => {
+        fn $name(i: &mut &str) -> PResult<ScalarConstant> {
+            (ascii::dec_uint, skip_space(":"), skip_space($tag))
+                .map(|(data, _, _)| ScalarConstant::$ctor(data))
+                .parse_next(i)
+        }
+    };
+}
+
+parse_typed_int!(signed parse_typed_i8 I8 "i8");
+parse_typed_int!(signed parse_typed_i16 I16 "i16");
+parse_typed_int!(signed parse_typed_i32 I32 "i32");
+parse_typed_int!(signed parse_typed_i64 I64 "i64");
+parse_typed_int!(signed parse_typed_i128 I128 "i128");
+parse_typed_int!(signed parse_typed_isize ISize "isize");
+parse_typed_int!(unsigned parse_typed_u8 U8 "u8");
+parse_typed_int!(unsigned parse_typed_u16 U16 "u16");
+parse_typed_int!(unsigned parse_typed_u32 U32 "u32");
+parse_typed_int!(unsigned parse_typed_u64 U64 "u64");
+parse_typed_int!(unsigned parse_typed_u128 U128 "u128");
+parse_typed_int!(unsigned parse_typed_usize USize "usize");
+
+fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
+    let inner = combinator::alt((
+        parse_typed_char,
+        parse_typed_bool,
+        parse_typed_f32,
+        parse_typed_f64,
+        parse_typed_i8,
+        parse_typed_i16,
+        parse_typed_i32,
+        parse_typed_i64,
+        parse_typed_i128,
+        parse_typed_isize,
+        parse_typed_u8,
+        parse_typed_u16,
+        parse_typed_u32,
+        parse_typed_u64,
+        parse_typed_u128,
+        parse_typed_usize,
+    ));
+    (
+        parse_operand,
+        skip_space("="),
+        "constant",
+        skip_space(inner).context(expect("typed constant value")),
+        ";",
+    )
+        .map(|(op, _, _, value, _)| Lir::ConstantScalar {
+            value: Box::new(value),
+            result: op,
+        })
         .parse_next(i)
 }
 
@@ -281,6 +382,32 @@ mod test {
                 ]),
                 Box::new(LirType::Scalar(ScalarType::I32))
             ))
+        );
+    }
+
+    #[test]
+    fn test_parse_constant_float_instr() {
+        let mut input = "%1 = constant 3.14 : f64;";
+        let result = parse_constant_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::ConstantScalar {
+                value: Box::new(ScalarConstant::F64(3.14)),
+                result: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_usize() {
+        let mut input = "%1 = constant 3 : usize;";
+        let result = parse_constant_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::ConstantScalar {
+                value: Box::new(ScalarConstant::USize(3)),
+                result: 1
+            }
         );
     }
 }

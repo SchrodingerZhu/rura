@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use rura_core::{types::LirType, Ident, Member, QualifiedName};
@@ -6,14 +8,15 @@ use rura_core::{types::LirType, Ident, Member, QualifiedName};
  */
 
 #[repr(transparent)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block(pub Vec<Lir>);
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ArithMode {
     Default,
     Wrapping,
     Saturating,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MakeMutReceiver {
     target: Member,
     hole: usize,
@@ -25,7 +28,7 @@ impl MakeMutReceiver {
         matches!(self.target, Member::Named(_),)
     }
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EliminationStyle {
     Unwrap {
         fields: Box<[(Member, usize)]>,
@@ -142,7 +145,7 @@ impl EliminationStyle {
         }
     }
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InductiveEliminator {
     pub ctor: QualifiedName,
     pub style: EliminationStyle,
@@ -162,8 +165,8 @@ impl InductiveEliminator {
         }
     }
 }
-
-pub enum Constant {
+#[derive(Clone, Debug)]
+pub enum ScalarConstant {
     I8(i8),
     I16(i16),
     I32(i32),
@@ -182,10 +185,60 @@ pub enum Constant {
     Char(char),
 }
 
+impl PartialEq for ScalarConstant {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => a == b,
+            (Self::I16(a), Self::I16(b)) => a == b,
+            (Self::I32(a), Self::I32(b)) => a == b,
+            (Self::I64(a), Self::I64(b)) => a == b,
+            (Self::ISize(a), Self::ISize(b)) => a == b,
+            (Self::I128(a), Self::I128(b)) => a == b,
+            (Self::U8(a), Self::U8(b)) => a == b,
+            (Self::U16(a), Self::U16(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::U64(a), Self::U64(b)) => a == b,
+            (Self::USize(a), Self::USize(b)) => a == b,
+            (Self::U128(a), Self::U128(b)) => a == b,
+            (Self::F32(a), Self::F32(b)) => a.to_bits() == b.to_bits(),
+            (Self::F64(a), Self::F64(b)) => a.to_bits() == b.to_bits(),
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Char(a), Self::Char(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+impl Eq for ScalarConstant {}
+
+impl Hash for ScalarConstant {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::I8(a) => a.hash(state),
+            Self::I16(a) => a.hash(state),
+            Self::I32(a) => a.hash(state),
+            Self::I64(a) => a.hash(state),
+            Self::ISize(a) => a.hash(state),
+            Self::I128(a) => a.hash(state),
+            Self::U8(a) => a.hash(state),
+            Self::U16(a) => a.hash(state),
+            Self::U32(a) => a.hash(state),
+            Self::U64(a) => a.hash(state),
+            Self::USize(a) => a.hash(state),
+            Self::U128(a) => a.hash(state),
+            Self::F32(a) => a.to_bits().hash(state),
+            Self::F64(a) => a.to_bits().hash(state),
+            Self::Bool(a) => a.hash(state),
+            Self::Char(a) => a.hash(state),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TupleEliminator {
     pub elements: Vec<usize>,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CtorCall {
     /// Identifier of the inductive type
     pub type_name: QualifiedName,
@@ -200,12 +253,12 @@ pub struct CtorCall {
     /// Identifier of the result
     pub result: usize,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnOp {
     Neg,
     Not,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinOp {
     Add,
     Sub,
@@ -226,7 +279,7 @@ pub enum BinOp {
     And,
     Or,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BinaryOp {
     /// The binary operation to perform
     pub op: BinOp,
@@ -239,7 +292,7 @@ pub struct BinaryOp {
     /// Identifier of the result
     pub result: usize,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnaryOp {
     /// The unary operation to perform
     pub op: UnOp,
@@ -248,7 +301,7 @@ pub struct UnaryOp {
     /// Identifier of the result
     pub result: usize,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionCall {
     /// Identifier of the function to call
     pub function: QualifiedName,
@@ -257,7 +310,7 @@ pub struct FunctionCall {
     /// Identifier of the result
     pub result: usize,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IfThenElse {
     /// Identifier of the condition
     pub condition: usize,
@@ -268,7 +321,7 @@ pub struct IfThenElse {
     /// Identifier of the result
     pub result: usize,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClosureCreation {
     /// parameters
     pub parameters: Box<[LirType]>,
@@ -280,6 +333,7 @@ pub struct ClosureCreation {
     pub result: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Lir {
     /// Closure application
     Apply {
@@ -358,6 +412,11 @@ pub enum Lir {
 
     /// If-then-else
     IfThenElse(Box<IfThenElse>),
+
+    ConstantScalar {
+        value: Box<ScalarConstant>,
+        result: usize,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {

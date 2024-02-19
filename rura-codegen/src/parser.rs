@@ -107,25 +107,18 @@ fn parse_tuple_type(i: &mut &str) -> PResult<LirType> {
 // for now, only allow simple one-level type vars
 fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
     let plain = identifier.map(TypeVar::Plain);
-    let associated = (identifier, ws_or_comment, "::", ws_or_comment, identifier)
-        .map(|(a, _, _, _, b)| TypeVar::Asscoiated(a, b));
+    let associated =
+        (identifier, skip_space("::"), identifier).map(|(a, _, b)| TypeVar::Asscoiated(a, b));
     let as_expr = (
         "<",
-        ws_or_comment,
-        parse_type_variable,
-        ws_or_comment,
+        skip_space(parse_type_variable),
         "as",
-        ws_or_comment,
-        qualified_name,
-        ws_or_comment,
+        skip_space(qualified_name),
         ">",
-        ws_or_comment,
-        "::",
+        skip_space("::"),
         identifier,
     )
-        .map(|(_, _, nested, _, _, _, qn, _, _, _, _, id)| {
-            TypeVar::AsExpr(Box::new(nested), qn, id)
-        });
+        .map(|(_, nested, _, qn, _, _, id)| TypeVar::AsExpr(Box::new(nested), qn, id));
     combinator::alt((associated, plain, as_expr)).parse_next(i)
 }
 

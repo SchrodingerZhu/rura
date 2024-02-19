@@ -235,10 +235,6 @@ impl Hash for ScalarConstant {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TupleEliminator {
-    pub elements: Vec<usize>,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CtorCall {
     /// Identifier of the inductive type
     pub type_name: QualifiedName,
@@ -386,18 +382,18 @@ pub enum Lir {
     },
 
     /// Tuple creation
-    Tuple {
+    TupleIntro {
         /// Identifiers of the elements
         elements: Box<[usize]>,
         /// Identifier of the result
         result: usize,
     },
 
-    TupleElimination {
+    TupleElim {
         /// Identifier of the tuple
         tuple: usize,
         /// Identifier of the eliminator
-        eliminator: TupleEliminator,
+        eliminator: Box<[usize]>,
     },
     /// Unary operations
     UnaryOp(Box<UnaryOp>),
@@ -465,7 +461,7 @@ impl Lir {
                 let value = variable(*value);
                 quote! { return #value; }
             }
-            Lir::Tuple { elements, result } => {
+            Lir::TupleIntro { elements, result } => {
                 let elements = elements.iter().copied().map(variable);
                 let result = variable(*result);
                 quote! {
@@ -508,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_tuple_lower_to_rust() {
-        well_formed_lower(Lir::Tuple {
+        well_formed_lower(Lir::TupleIntro {
             elements: vec![1, 2].into_boxed_slice(),
             result: 3,
         });

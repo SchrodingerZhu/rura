@@ -154,7 +154,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
 fn parse_tuple_type(i: &mut &str) -> PResult<LirType> {
     let delimited = skip_space(parse_lir_type);
     let inner = combinator::repeat(1.., (delimited, ",").map(|x| x.0));
-    ("(", inner, ")")
+    ("(", inner, skip_space(")"))
         .map(|x| x.1)
         .map(|inner: Vec<_>| LirType::Tuple(inner.into_boxed_slice()))
         .parse_next(i)
@@ -290,6 +290,46 @@ fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
             closure,
             arg,
             result: op,
+        })
+        .parse_next(i)
+}
+
+fn parse_tuple_intro_instr(i: &mut &str) -> PResult<Lir> {
+    let inner = combinator::separated(1.., skip_space(parse_operand), ",");
+    (
+        parse_operand,
+        skip_space("="),
+        "(",
+        inner,
+        skip_space(")"),
+        ";",
+    )
+        .map(|(op, _, _, elements, _, _)| {
+            let elements: Vec<_> = elements;
+            Lir::TupleIntro {
+                elements: elements.into_boxed_slice(),
+                result: op,
+            }
+        })
+        .parse_next(i)
+}
+
+fn parse_tuple_elim_instr(i: &mut &str) -> PResult<Lir> {
+    let inner = combinator::separated(1.., skip_space(parse_operand), ",");
+    (
+        "(",
+        inner,
+        skip_space(")"),
+        "=",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(_, elements, _, _, tuple, _)| {
+            let elements: Vec<_> = elements;
+            Lir::TupleElim {
+                tuple,
+                eliminator: elements.into_boxed_slice(),
+            }
         })
         .parse_next(i)
 }
@@ -442,6 +482,31 @@ mod test {
                 closure: 2,
                 arg: 3,
                 result: 1
+            }
+        );
+    }
+    #[test]
+    fn test_parse_tuple_intro_instr() {
+        let mut input = "%1 = ( %2, %3 );";
+        let result = parse_tuple_intro_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::TupleIntro {
+                elements: Box::new([2, 3]),
+                result: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_tuple_elim_instr() {
+        let mut input = "( %1, %2 ) = %3;";
+        let result = parse_tuple_elim_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::TupleElim {
+                tuple: 3,
+                eliminator: Box::new([1, 2])
             }
         );
     }

@@ -84,6 +84,50 @@ fn qualified_name(input: &mut &str) -> PResult<QualifiedName> {
         .parse_next(input)
 }
 
+fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
+    ("◊", parse_lir_type)
+        .map(|(_, x)| LirType::Hole(Box::new(x)))
+        .parse_next(i)
+}
+
+fn parse_type_ref(i: &mut &str) -> PResult<LirType> {
+    ("&", parse_lir_type)
+        .map(|(_, x)| LirType::Ref(Box::new(x)))
+        .parse_next(i)
+}
+
+fn parse_object_type(i: &mut &str) -> PResult<LirType> {
+    let inner = skip_space(parse_lir_type);
+    let type_parameters = combinator::opt(
+        (
+            "<",
+            combinator::separated(1.., skip_space(parse_lir_type), ","),
+            ">",
+        )
+            .map(|(_, x, _): (_, Vec<_>, _)| x),
+    );
+    (qualified_name, ws_or_comment, type_parameters)
+        .map(|(qn, _, type_params)| {
+            LirType::Object(qn, type_params.unwrap_or_default().into_boxed_slice())
+        })
+        .parse_next(i)
+}
+
+fn parse_closure_type(i: &mut &str) -> PResult<LirType> {
+    let types = combinator::separated(0.., skip_space(parse_lir_type), ",");
+    (
+        "fn",
+        skip_space("("),
+        types,
+        skip_space(")"),
+        "->",
+        skip_space(parse_lir_type),
+    )
+        .map(|(_, _, args, _, _, ret)| (args, ret))
+        .map(|(args, ret): (Vec<_>, _)| LirType::Closure(args.into_boxed_slice(), Box::new(ret)))
+        .parse_next(i)
+}
+
 fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     combinator::alt((
         parse_unit,
@@ -91,6 +135,10 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         parse_scalar,
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
+        parse_type_hole,
+        parse_type_ref,
+        parse_closure_type,
+        parse_object_type,
     ))
     .parse_next(i)
 }
@@ -119,7 +167,9 @@ fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
         identifier,
     )
         .map(|(_, nested, _, qn, _, _, id)| TypeVar::AsExpr(Box::new(nested), qn, id));
-    combinator::alt((associated, plain, as_expr)).parse_next(i)
+    ("@", combinator::alt((associated, plain, as_expr)))
+        .map(|x| x.1)
+        .parse_next(i)
 }
 
 #[cfg(test)]
@@ -147,14 +197,14 @@ mod test {
 
     #[test]
     fn test_parse_plain_type_var() {
-        let mut input = "T";
+        let mut input = "@T";
         let result = parse_type_variable(&mut input);
         assert_eq!(result, Ok(TypeVar::Plain(Ident::new("T"))));
     }
 
     #[test]
     fn test_parse_associated_type_var() {
-        let mut input = "T::U";
+        let mut input = "@T::U";
         let result = parse_type_variable(&mut input);
         assert_eq!(
             result,
@@ -164,7 +214,7 @@ mod test {
 
     #[test]
     fn test_parse_as_expr_type_var() {
-        let mut input = "<T::U as std::V>::W";
+        let mut input = "@<@T::U as std::V>::W";
         let result = parse_type_variable(&mut input);
         assert_eq!(
             result,
@@ -186,6 +236,51 @@ mod test {
                 LirType::Scalar(ScalarType::I32),
                 LirType::Scalar(ScalarType::F64)
             ])))
+        );
+    }
+
+    #[test]
+    fn test_parse_object_type_without_params() {
+        let mut input = "std::Vec";
+        let result = parse_lir_type(&mut input);
+        assert_eq!(
+            result,
+            Ok(LirType::Object(
+                QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                Box::new([])
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_object_type_with_params() {
+        let mut input = "std::Vec<i32, f64>";
+        let result = parse_lir_type(&mut input);
+        assert_eq!(
+            result,
+            Ok(LirType::Object(
+                QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                Box::new([
+                    LirType::Scalar(ScalarType::I32),
+                    LirType::Scalar(ScalarType::F64)
+                ])
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_closure_type() {
+        let mut input = "fn (i32, f64) -> i32";
+        let result = parse_lir_type(&mut input);
+        assert_eq!(
+            result,
+            Ok(LirType::Closure(
+                Box::new([
+                    LirType::Scalar(ScalarType::I32),
+                    LirType::Scalar(ScalarType::F64)
+                ]),
+                Box::new(LirType::Scalar(ScalarType::I32))
+            ))
         );
     }
 }

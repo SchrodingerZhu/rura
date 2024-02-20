@@ -1,3 +1,4 @@
+#![allow(unused)]
 use winnow::PResult;
 
 pub fn file<'s>(input: &mut &'s str) -> PResult<&'s str> {

@@ -246,9 +246,9 @@ pub struct CtorCall {
     /// Type parameters
     pub type_params: Box<[LirType]>,
     /// Identifier of the constructor
-    pub ctor_idx: usize,
+    pub ctor: Ident,
     /// Identifiers of the arguments
-    pub args: Vec<usize>,
+    pub args: Box<[usize]>,
     /// Reuse token
     pub token: Option<usize>,
     /// Identifier of the result

@@ -8,8 +8,8 @@ use winnow::prelude::*;
 use winnow::*;
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, EliminationStyle, FunctionCall, IfThenElse,
-    InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnOp, UnaryOp,
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
+    IfThenElse, InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnOp, UnaryOp,
 };
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
@@ -108,7 +108,7 @@ fn parse_type_ref(i: &mut &str) -> PResult<LirType> {
         .parse_next(i)
 }
 
-fn parse_object_type(i: &mut &str) -> PResult<LirType> {
+fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
     let inner = skip_space(parse_lir_type);
     let type_parameters = combinator::opt(
         (
@@ -119,9 +119,7 @@ fn parse_object_type(i: &mut &str) -> PResult<LirType> {
             .map(|(_, x, _): (_, Vec<_>, _)| x),
     );
     (qualified_name, ws_or_comment, type_parameters)
-        .map(|(qn, _, type_params)| {
-            LirType::Object(qn, type_params.unwrap_or_default().into_boxed_slice())
-        })
+        .map(|(qn, _, type_params)| (qn, type_params.unwrap_or_default().into_boxed_slice()))
         .parse_next(i)
 }
 
@@ -150,7 +148,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         parse_type_hole,
         parse_type_ref,
         parse_closure_type,
-        parse_object_type,
+        parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),
     ))
     .context(expect("lir type"))
     .parse_next(i)
@@ -536,16 +534,16 @@ fn parse_member_bindings(i: &mut &str) -> PResult<Box<[(Member, usize)]>> {
     combinator::alt((named, unnamed)).parse_next(i)
 }
 
-fn parse_hole_operand(i: &mut &str) -> PResult<usize> {
+fn parse_squared_operand(i: &mut &str) -> PResult<usize> {
     ("[", skip_space(parse_operand), "]")
         .map(|(_, x, _)| x)
-        .context(expect("hole operand"))
+        .context(expect("squared operand"))
         .parse_next(i)
 }
 
 fn parse_named_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, Ident, usize)>> {
     let single = (
-        parse_hole_operand,
+        parse_squared_operand,
         skip_space(identifier),
         ":",
         ws_or_comment,
@@ -564,7 +562,7 @@ fn parse_named_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, Id
 
 fn parse_unnamed_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, usize)>> {
     let single =
-        (parse_hole_operand, ws_or_comment, parse_operand).map(|(hole, _, value)| (hole, value));
+        (parse_squared_operand, ws_or_comment, parse_operand).map(|(hole, _, value)| (hole, value));
     (
         "(",
         combinator::separated(1.., skip_space(single), ","),
@@ -679,19 +677,22 @@ fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
-    let operand_list = (
+fn parse_operand_list<'a>() -> impl Parser<&'a str, Box<[usize]>, ContextError> {
+    (
         "(",
         combinator::separated(0.., skip_space(parse_operand), ","),
         ")",
     )
-        .map(|(_, x, _)| Vec::into_boxed_slice(x));
+        .map(|(_, x, _)| Vec::into_boxed_slice(x))
+}
+
+fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
         "call",
         skip_space(qualified_name),
-        operand_list,
+        parse_operand_list(),
         ";",
     )
         .map(|(result, _, _, function, args, _)| {
@@ -701,6 +702,33 @@ fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
                 args,
             }))
         })
+        .parse_next(i)
+}
+
+fn parse_ctor_call_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "new",
+        skip_space(combinator::opt(parse_squared_operand)),
+        parse_object_type_content,
+        skip_space("@"),
+        identifier,
+        skip_space(parse_operand_list()),
+        ";",
+    )
+        .map(
+            |(result, _, _, token, (type_name, type_params), _, ctor, args, _)| {
+                Lir::CtorCall(Box::new(CtorCall {
+                    result,
+                    token,
+                    type_name,
+                    type_params,
+                    args,
+                    ctor,
+                }))
+            },
+        )
         .parse_next(i)
 }
 
@@ -1094,6 +1122,23 @@ mod test {
                 result: 1,
                 function: QualifiedName::new(Box::new([Ident::new("test")])),
                 args: Box::new([2, 3])
+            }))
+        );
+    }
+
+    #[test]
+    fn test_parse_ctor_call_instr() {
+        let mut input = r#"%1 = new [%2] List @Cons(%4, %6);"#;
+        let result = parse_ctor_call_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::CtorCall(Box::new(CtorCall {
+                result: 1,
+                token: Some(2),
+                type_name: QualifiedName::new(Box::new([Ident::new("List")])),
+                type_params: Box::new([]),
+                ctor: "Cons".into(),
+                args: Box::new([4, 6])
             }))
         );
     }

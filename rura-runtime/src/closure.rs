@@ -16,6 +16,8 @@ pub trait PartialParams: Clone {
     type Full;
     type Progress: PartialParams<Full = Self::Full, Pending = <Self::Pending as Params>::Tail>;
     fn apply(&mut self, next: <Self::Pending as Params>::Head);
+    /// # Safety
+    /// This function should only be called when the closure is fully applied.
     unsafe fn transmute_full(self) -> Self::Full;
 }
 

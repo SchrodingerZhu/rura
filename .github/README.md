@@ -42,8 +42,8 @@ Additionally, the idea of reduce duplication and improve sharing has also been d
 ## Tours
 
 1. Surface Syntax Specification (TODO)
-2. [Types](docs/types.md)
-3. [Ownership Model](docs/ownership.md)
-4. [Linearity/Exclusivity](docs/exclusivity.md)
-5. [Closures](docs/closures.md)
-6. [Lowering](docs/lowering.md)
+2. [Types](../docs/types.md)
+3. [Ownership Model](../docs/ownership.md)
+4. [Linearity/Exclusivity](../docs/exclusivity.md)
+5. [Closures](../docs/closures.md)
+6. [Lowering](../docs/lowering.md)

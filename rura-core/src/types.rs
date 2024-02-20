@@ -100,7 +100,7 @@ impl Display for ClosureType {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TypeVar {
     Plain(Ident),
-    Asscoiated(Ident, Ident),
+    Associated(Ident, Ident),
     AsExpr(Box<Self>, QualifiedName, Ident),
 }
 
@@ -108,7 +108,7 @@ impl Display for TypeVar {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeVar::Plain(ident) => write!(f, "{}", ident),
-            TypeVar::Asscoiated(ident, assoc) => write!(f, "{}::{}", ident, assoc),
+            TypeVar::Associated(ident, assoc) => write!(f, "{}::{}", ident, assoc),
             TypeVar::AsExpr(ty, ident, assoc) => write!(f, "<{} as {}>::{}", ty, ident, assoc),
         }
     }

@@ -1,10 +1,10 @@
 # Types
 
-`rura` has both plain scalar types and memory-managed objects. The overall idea is to keep a similar design as Rust.
+Rura has both plain scalar types and memory-managed objects. The overall idea is to keep a similar design as Rust.
 
-`rura` types are always defined with `Clone` trait.
+Rura types are always defined with `Clone` trait.
 
-## Scalar Types
+## Scalar types
 
 - `bool`
 - `i8/u8`
@@ -16,19 +16,20 @@
 - `f64`
 - `char`
 
-## Unit Type
+## Unit type
 
 We use the same notion `()` for unit type as Rust.
 
-## Bottom Type
+## Bottom type
 
-We use the same notion `!` for bottom type (never type) as Rust. This represents the function never returns (i.e. it panics or exits). 
+We use the same notion `!` for bottom type (never type) as Rust. This represents the function never returns (i.e. it
+panics or exits).
 
 ## Tuples
 
 A Tuple is of the form `(A, B, C, D, ...)` where `A, B, C, D, ...` are other admissible types. Tuples are stored and passed without boxing.
 
-## Inductive Types
+## Inductive types
 
 ```rust
 enum Foo<T> {

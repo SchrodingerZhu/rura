@@ -45,7 +45,7 @@ Consider the following loop that add `1.0` to every element in a `FloatArray`:
 
 ```lean
 partial def add1(x : FloatArray) : FloatArray :=
-  let rec loop (@[exclusive] r : FloatArray) (i : Nat) : FloatArray :=
+  let rec loop (r : FloatArray) (i : Nat) : FloatArray :=
     if h : i < r.size then
       let idx : Fin r.size := ⟨ i, h ⟩
       loop (r.set idx (r.get idx + 1.0)) (i+1)

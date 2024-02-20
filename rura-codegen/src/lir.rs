@@ -314,8 +314,6 @@ pub struct IfThenElse {
     pub then_branch: Block,
     /// Identifier of the else branch
     pub else_branch: Block,
-    /// Identifier of the result
-    pub result: usize,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClosureCreation {

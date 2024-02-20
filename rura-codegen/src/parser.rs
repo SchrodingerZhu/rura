@@ -7,7 +7,8 @@ use winnow::prelude::*;
 use winnow::*;
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, Lir, ScalarConstant, UnOp, UnaryOp,
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, IfThenElse, Lir, ScalarConstant, UnOp,
+    UnaryOp,
 };
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
@@ -454,6 +455,31 @@ fn parse_closure_hoas(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_return_instr(i: &mut &str) -> PResult<Lir> {
+    ("return", skip_space(parse_operand), ";")
+        .map(|(_, value, _)| Lir::Return { value })
+        .parse_next(i)
+}
+
+fn parse_if_then_else_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        "if",
+        skip_space(parse_operand),
+        ws_or_comment,
+        parse_block,
+        skip_space("else"),
+        parse_block,
+    )
+        .map(|(_, condition, _, then_branch, _, else_branch)| {
+            Lir::IfThenElse(Box::new(IfThenElse {
+                condition,
+                then_branch,
+                else_branch,
+            }))
+        })
+        .parse_next(i)
+}
+
 fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
     combinator::alt((
         parse_constant_instr,
@@ -462,6 +488,9 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_tuple_elim_instr,
         parse_unary_ops,
         parse_bin_ops,
+        parse_return_instr,
+        parse_closure_hoas,
+        parse_if_then_else_instr,
     ))
     .context(expect("lir instruction"))
     .parse_next(i)
@@ -681,7 +710,10 @@ mod test {
 
     #[test]
     fn test_parse_closure_hoas() {
-        let mut input = "%1 = ( %2 : i32, %3 : f64 ) -> i32 { %4 = constant 3 : i32; };";
+        let mut input = r#"%1 = ( %2 : i32, %3 : f64 ) -> i32 { 
+            %4 = constant 3 : i32;
+            return %4;
+        };"#;
         let result = parse_closure_hoas(&mut input).unwrap();
         assert_eq!(
             result,
@@ -691,12 +723,49 @@ mod test {
                     (2, LirType::Scalar(ScalarType::I32),),
                     (3, LirType::Scalar(ScalarType::F64),)
                 ]),
-                body: Block(vec![Lir::ConstantScalar {
-                    value: Box::new(ScalarConstant::I32(3)),
-                    result: 4
-                }]),
+                body: Block(vec![
+                    Lir::ConstantScalar {
+                        value: Box::new(ScalarConstant::I32(3)),
+                        result: 4
+                    },
+                    Lir::Return { value: 4 },
+                ]),
                 return_type: LirType::Scalar(ScalarType::I32)
             }))
+        );
+    }
+
+    #[test]
+    fn test_parse_if_then_else_instr_in_block() {
+        let mut text = r#"{
+            %1 = constant true : bool;
+            %2 = constant 3 : i32;
+            %3 = constant 4 : i32;
+            // block terminator
+            if %1 { return %2; } else { return %3; }
+        }"#;
+        let result = parse_block(&mut text).unwrap();
+        assert_eq!(
+            result,
+            Block(vec![
+                Lir::ConstantScalar {
+                    value: Box::new(ScalarConstant::Bool(true)),
+                    result: 1
+                },
+                Lir::ConstantScalar {
+                    value: Box::new(ScalarConstant::I32(3)),
+                    result: 2
+                },
+                Lir::ConstantScalar {
+                    value: Box::new(ScalarConstant::I32(4)),
+                    result: 3
+                },
+                Lir::IfThenElse(Box::new(IfThenElse {
+                    condition: 1,
+                    then_branch: Block(vec![Lir::Return { value: 2 }]),
+                    else_branch: Block(vec![Lir::Return { value: 3 }]),
+                }))
+            ])
         );
     }
 }

@@ -1,7 +1,6 @@
-#![allow(unused)]
 use winnow::PResult;
 
-pub fn file<'s>(input: &mut &'s str) -> PResult<&'s str> {
+pub fn file<'s>(_: &mut &'s str) -> PResult<&'s str> {
     Ok("")
 }
 

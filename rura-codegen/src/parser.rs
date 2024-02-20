@@ -167,7 +167,7 @@ fn parse_tuple_type(i: &mut &str) -> PResult<LirType> {
 fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
     let plain = identifier.map(TypeVar::Plain);
     let associated =
-        (identifier, skip_space("::"), identifier).map(|(a, _, b)| TypeVar::Asscoiated(a, b));
+        (identifier, skip_space("::"), identifier).map(|(a, _, b)| TypeVar::Associated(a, b));
     let as_expr = (
         "<",
         skip_space(parse_type_variable),
@@ -503,7 +503,7 @@ mod test {
         let result = parse_type_variable(&mut input);
         assert_eq!(
             result,
-            Ok(TypeVar::Asscoiated(Ident::new("T"), Ident::new("U")))
+            Ok(TypeVar::Associated(Ident::new("T"), Ident::new("U")))
         );
     }
 
@@ -514,7 +514,7 @@ mod test {
         assert_eq!(
             result,
             Ok(TypeVar::AsExpr(
-                Box::new(TypeVar::Asscoiated(Ident::new("T"), Ident::new("U"))),
+                Box::new(TypeVar::Associated(Ident::new("T"), Ident::new("U"))),
                 QualifiedName::new(Box::new([Ident::new("std"), Ident::new("V")])),
                 Ident::new("W")
             ))

@@ -667,6 +667,18 @@ fn parse_inductive_elimination_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        "fill",
+        skip_space(parse_operand),
+        "<-",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(_, hole, _, value, _)| Lir::Fill { hole, value })
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -1038,5 +1050,12 @@ mod test {
                 ])
             }
         );
+    }
+
+    #[test]
+    fn test_parse_fill_instr() {
+        let mut input = r#"fill %1 <- %2;"#;
+        let result = parse_fill_instr(&mut input).unwrap();
+        assert_eq!(result, Lir::Fill { hole: 1, value: 2 });
     }
 }

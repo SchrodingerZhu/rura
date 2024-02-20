@@ -401,6 +401,12 @@ pub enum Lir {
         value: Box<ScalarConstant>,
         result: usize,
     },
+
+    // Hole filling
+    Fill {
+        hole: usize,
+        value: usize,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {

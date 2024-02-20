@@ -320,9 +320,9 @@ pub struct IfThenElse {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClosureCreation {
     /// parameters
-    pub parameters: Box<[LirType]>,
-    /// TODO: rework capture logic (can we use rust's capture logic?)
-    pub capture: Vec<usize>,
+    pub params: Box<[(usize, LirType)]>,
+    /// return type
+    pub return_type: LirType,
     /// body
     pub body: Block,
     /// Identifier of the result
@@ -368,13 +368,6 @@ pub enum Lir {
         eliminator: Box<[InductiveEliminator]>,
     },
 
-    Ref {
-        /// Identifier of the value to reference
-        value: usize,
-        /// Identifier of the result
-        result: usize,
-    },
-
     /// Return a value
     Return {
         /// Identifier of the value to return
@@ -397,14 +390,6 @@ pub enum Lir {
     },
     /// Unary operations
     UnaryOp(Box<UnaryOp>),
-
-    /// Uniquefy a value
-    Uniquefy {
-        /// Identifier of the value to uniquefy
-        value: usize,
-        /// Identifier of the result
-        result: usize,
-    },
 
     /// If-then-else
     IfThenElse(Box<IfThenElse>),
@@ -435,20 +420,6 @@ fn qualified_name(name: &QualifiedName) -> proc_macro2::TokenStream {
 impl Lir {
     pub fn lower_to_rust(&self) -> proc_macro2::TokenStream {
         match self {
-            Lir::Uniquefy { value, result } => {
-                let value = variable(*value);
-                let result = variable(*result);
-                quote! {
-                    let #result = #value.uniquefy();
-                }
-            }
-            Lir::Ref { value, result } => {
-                let value = variable(*value);
-                let result = variable(*result);
-                quote! {
-                    let #result = &*#value;
-                }
-            }
             Lir::Drop { value, token } => {
                 let value = variable(*value);
                 let token = token.map(variable);

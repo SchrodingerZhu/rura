@@ -6,7 +6,9 @@ use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::prelude::*;
 use winnow::*;
 
-use crate::lir::{ArithMode, BinOp, BinaryOp, Lir, ScalarConstant, UnOp, UnaryOp};
+use crate::lir::{
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, Lir, ScalarConstant, UnOp, UnaryOp,
+};
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
     ("//", winnow::ascii::till_line_ending)
@@ -335,7 +337,7 @@ fn parse_tuple_elim_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_unary_op(i: &mut &str, x: char, op: UnOp) -> PResult<Lir> {
+fn parse_unary_op<'a>(x: char, op: UnOp) -> impl Parser<&'a str, Lir, ContextError> {
     (
         parse_operand,
         skip_space('='),
@@ -343,14 +345,13 @@ fn parse_unary_op(i: &mut &str, x: char, op: UnOp) -> PResult<Lir> {
         skip_space(parse_operand),
         ";",
     )
-        .map(|(result, _, _, operand, _)| {
+        .map(move |(result, _, _, operand, _)| {
             Lir::UnaryOp(Box::new(UnaryOp {
                 op,
                 operand,
                 result,
             }))
         })
-        .parse_next(i)
 }
 
 fn parse_arith_mode(i: &mut &str) -> PResult<ArithMode> {
@@ -364,7 +365,7 @@ fn parse_arith_mode(i: &mut &str) -> PResult<ArithMode> {
         .parse_next(i)
 }
 
-fn parse_binary_op(i: &mut &str, x: char, op: BinOp) -> PResult<Lir> {
+fn parse_binary_op(x: &str, op: BinOp) -> impl Parser<&'_ str, Lir, ContextError> {
     (
         parse_operand,
         skip_space('='),
@@ -374,7 +375,7 @@ fn parse_binary_op(i: &mut &str, x: char, op: BinOp) -> PResult<Lir> {
         skip_space(combinator::opt(parse_arith_mode)),
         ";",
     )
-        .map(|(result, _, lhs, _, rhs, mode, _)| {
+        .map(move |(result, _, lhs, _, rhs, mode, _)| {
             Lir::BinaryOp(Box::new(BinaryOp {
                 op,
                 mode,
@@ -383,7 +384,87 @@ fn parse_binary_op(i: &mut &str, x: char, op: BinOp) -> PResult<Lir> {
                 result,
             }))
         })
+}
+
+fn parse_bin_ops(i: &mut &str) -> PResult<Lir> {
+    combinator::alt((
+        parse_binary_op("+", BinOp::Add),
+        parse_binary_op("-", BinOp::Sub),
+        parse_binary_op("*", BinOp::Mul),
+        parse_binary_op("/", BinOp::Div),
+        parse_binary_op("%", BinOp::Rem),
+        parse_binary_op("==", BinOp::Eq),
+        parse_binary_op("!=", BinOp::Ne),
+        parse_binary_op("<", BinOp::Lt),
+        parse_binary_op("<=", BinOp::Le),
+        parse_binary_op(">", BinOp::Gt),
+        parse_binary_op(">=", BinOp::Ge),
+        parse_binary_op("&&", BinOp::And),
+        parse_binary_op("||", BinOp::Or),
+        parse_binary_op(">>", BinOp::Shr),
+        parse_binary_op("<<", BinOp::Shl),
+    ))
+    .parse_next(i)
+}
+
+fn parse_unary_ops(i: &mut &str) -> PResult<Lir> {
+    combinator::alt((
+        parse_unary_op('-', UnOp::Neg),
+        parse_unary_op('!', UnOp::Not),
+    ))
+    .parse_next(i)
+}
+
+fn parse_block(i: &mut &str) -> PResult<Block> {
+    let inner = combinator::repeat(0.., skip_space(parse_lir_instr));
+    ("{", inner, "}")
+        .map(|(_, x, _)| Block(x))
+        .context(expect("lir block"))
         .parse_next(i)
+}
+
+fn parse_closure_params(i: &mut &str) -> PResult<Box<[(usize, LirType)]>> {
+    let param_pair = (parse_operand, skip_space(":"), parse_lir_type).map(|(x, _, y)| (x, y));
+    let inner = combinator::separated(1.., skip_space(param_pair), ",")
+        .map(|x: Vec<_>| x.into_boxed_slice());
+    ("(", inner, ")")
+        .map(|(_, x, _)| x)
+        .context(expect("closure parameters"))
+        .parse_next(i)
+}
+
+fn parse_closure_hoas(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space('='),
+        parse_closure_params,
+        skip_space("->"),
+        parse_lir_type,
+        ws_or_comment,
+        parse_block,
+    )
+        .map(|(result, _, params, _, return_type, _, body)| {
+            Lir::Closure(Box::new(ClosureCreation {
+                result,
+                params,
+                body,
+                return_type,
+            }))
+        })
+        .parse_next(i)
+}
+
+fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
+    combinator::alt((
+        parse_constant_instr,
+        parse_apply_instr,
+        parse_tuple_intro_instr,
+        parse_tuple_elim_instr,
+        parse_unary_ops,
+        parse_bin_ops,
+    ))
+    .context(expect("lir instruction"))
+    .parse_next(i)
 }
 
 #[cfg(test)]
@@ -505,6 +586,7 @@ mod test {
         assert_eq!(
             result,
             Lir::ConstantScalar {
+                #[allow(clippy::approx_constant)]
                 value: Box::new(ScalarConstant::F64(3.14)),
                 result: 1
             }
@@ -566,7 +648,9 @@ mod test {
     #[test]
     fn test_parse_unary_neg_instr() {
         let mut input = "%1 = - %2;";
-        let result = parse_unary_op(&mut input, '-', UnOp::Neg).unwrap();
+        let result = parse_unary_op('-', UnOp::Neg)
+            .parse_next(&mut input)
+            .unwrap();
         assert_eq!(
             result,
             Lir::UnaryOp(Box::new(UnaryOp {
@@ -580,7 +664,9 @@ mod test {
     #[test]
     fn test_parse_binary_wrapping_add_instr() {
         let mut input = "%1 = %2 + %3 [wrapping];";
-        let result = parse_binary_op(&mut input, '+', BinOp::Add).unwrap();
+        let result = parse_binary_op("+", BinOp::Add)
+            .parse_next(&mut input)
+            .unwrap();
         assert_eq!(
             result,
             Lir::BinaryOp(Box::new(BinaryOp {
@@ -589,6 +675,27 @@ mod test {
                 lhs: 2,
                 rhs: 3,
                 result: 1
+            }))
+        );
+    }
+
+    #[test]
+    fn test_parse_closure_hoas() {
+        let mut input = "%1 = ( %2 : i32, %3 : f64 ) -> i32 { %4 = constant 3 : i32; };";
+        let result = parse_closure_hoas(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::Closure(Box::new(ClosureCreation {
+                result: 1,
+                params: Box::new([
+                    (2, LirType::Scalar(ScalarType::I32),),
+                    (3, LirType::Scalar(ScalarType::F64),)
+                ]),
+                body: Block(vec![Lir::ConstantScalar {
+                    value: Box::new(ScalarConstant::I32(3)),
+                    result: 4
+                }]),
+                return_type: LirType::Scalar(ScalarType::I32)
             }))
         );
     }

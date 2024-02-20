@@ -1,5 +1,6 @@
 #![allow(unused)]
 use rura_core::types::{LirType, ScalarType};
+use rura_core::Member;
 use rura_core::{types::TypeVar, Ident, QualifiedName};
 use winnow::ascii::alpha1;
 use winnow::error::{ContextError, StrContext, StrContextValue};
@@ -7,8 +8,8 @@ use winnow::prelude::*;
 use winnow::*;
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, IfThenElse, Lir, ScalarConstant, UnOp,
-    UnaryOp,
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, EliminationStyle, IfThenElse,
+    InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnOp, UnaryOp,
 };
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
@@ -496,6 +497,176 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
     .parse_next(i)
 }
 
+fn parse_named_value_bindings(i: &mut &str) -> PResult<Vec<(Ident, usize)>> {
+    let single = (identifier, skip_space(":"), parse_operand).map(|(name, _, value)| (name, value));
+    (
+        "{",
+        combinator::separated(1.., skip_space(single), ","),
+        "}",
+    )
+        .map(|(_, x, _)| x)
+        .context(expect("named value bindings"))
+        .parse_next(i)
+}
+
+fn parse_unnamed_value_bindings(i: &mut &str) -> PResult<Vec<usize>> {
+    let inner = combinator::separated(1.., skip_space(parse_operand), ",");
+    ("(", inner, ")")
+        .map(|(_, x, _)| x)
+        .context(expect("unnamed value bindings"))
+        .parse_next(i)
+}
+
+fn parse_member_bindings(i: &mut &str) -> PResult<Box<[(Member, usize)]>> {
+    let named = parse_named_value_bindings.map(|inner| {
+        inner
+            .into_iter()
+            .map(|(name, value)| (Member::Named(name.clone()), value))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    let unnamed = parse_unnamed_value_bindings.map(|inner| {
+        inner
+            .into_iter()
+            .enumerate()
+            .map(|(idx, value)| (Member::Index(idx), value))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    combinator::alt((named, unnamed)).parse_next(i)
+}
+
+fn parse_hole_operand(i: &mut &str) -> PResult<usize> {
+    ("[", skip_space(parse_operand), "]")
+        .map(|(_, x, _)| x)
+        .context(expect("hole operand"))
+        .parse_next(i)
+}
+
+fn parse_named_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, Ident, usize)>> {
+    let single = (
+        parse_hole_operand,
+        skip_space(identifier),
+        ":",
+        ws_or_comment,
+        parse_operand,
+    )
+        .map(|(hole, name, _, _, value)| (hole, name, value));
+    (
+        "{",
+        combinator::separated(1.., skip_space(single), ","),
+        "}",
+    )
+        .map(|x| x.1)
+        .context(expect("named value bindings"))
+        .parse_next(i)
+}
+
+fn parse_unnamed_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, usize)>> {
+    let single =
+        (parse_hole_operand, ws_or_comment, parse_operand).map(|(hole, _, value)| (hole, value));
+    (
+        "(",
+        combinator::separated(1.., skip_space(single), ","),
+        ")",
+    )
+        .map(|x| x.1)
+        .context(expect("unnamed value bindings"))
+        .parse_next(i)
+}
+
+fn parse_member_bindings_with_holes(i: &mut &str) -> PResult<Box<[MakeMutReceiver]>> {
+    let named = parse_named_value_bindings_with_holes.map(|inner| {
+        inner
+            .into_iter()
+            .map(|(hole, target, value)| MakeMutReceiver {
+                hole,
+                target: Member::Named(target),
+                value,
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    let unnamed = parse_unnamed_value_bindings_with_holes.map(|inner| {
+        inner
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (hole, value))| MakeMutReceiver {
+                hole,
+                target: Member::Index(idx),
+                value,
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    combinator::alt((named, unnamed)).parse_next(i)
+}
+
+fn parse_fixpoint_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+    (
+        "[fixpoint(",
+        skip_space(parse_operand),
+        ")]",
+        ws_or_comment,
+        qualified_name,
+    )
+        .map(|(_, idx, _, _, name)| (name, EliminationStyle::Fixpoint(idx)))
+        .context(expect("fixpoint eliminator header"))
+        .parse_next(i)
+}
+
+fn parse_unwrap_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+    (
+        "[unwrap(",
+        skip_space(parse_operand),
+        ")]",
+        skip_space(qualified_name),
+        parse_member_bindings,
+    )
+        .map(|(_, token, _, name, fields)| (name, EliminationStyle::Unwrap { fields, token }))
+        .context(expect("unwrap eliminator header"))
+        .parse_next(i)
+}
+
+fn parse_mutation_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+    (
+        "[mutation]",
+        skip_space(qualified_name),
+        parse_member_bindings_with_holes,
+    )
+        .map(|(_, name, fields)| (name, EliminationStyle::Mutation(fields)))
+        .context(expect("mutation eliminator header"))
+        .parse_next(i)
+}
+
+fn parse_ref_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+    ("[ref]", skip_space(qualified_name), parse_member_bindings)
+        .map(|(_, name, fields)| (name, EliminationStyle::Ref(fields)))
+        .context(expect("ref eliminator header"))
+        .parse_next(i)
+}
+
+fn parse_inductive_elimination_instr(i: &mut &str) -> PResult<Lir> {
+    let header = combinator::alt((
+        parse_fixpoint_eliminator_header,
+        parse_unwrap_eliminator_header,
+        parse_mutation_eliminator_header,
+        parse_ref_eliminator_header,
+    ));
+    let eliminator = (header, skip_space("=>"), parse_block)
+        .map(|((ctor, style), _, body)| InductiveEliminator { ctor, style, body });
+    let rules = combinator::repeat(1.., skip_space(eliminator)).map(Vec::into_boxed_slice);
+
+    ("match", skip_space(parse_operand), "{", rules, "}")
+        .map(
+            |(_, inductive, _, eliminator, _)| Lir::InductiveElimination {
+                inductive,
+                eliminator,
+            },
+        )
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -766,6 +937,106 @@ mod test {
                     else_branch: Block(vec![Lir::Return { value: 3 }]),
                 }))
             ])
+        );
+    }
+
+    #[test]
+    fn test_parse_fixpoint_eliminator_header() {
+        let mut input = r#"[fixpoint(%0)] std::Vec"#;
+        let result = parse_fixpoint_eliminator_header(&mut input).unwrap();
+        assert_eq!(
+            result,
+            (
+                QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                EliminationStyle::Fixpoint(0)
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_unwrap_eliminator_header() {
+        let mut input = r#"[unwrap(%0)] std::Vec { head: %1, tail: %2 }"#;
+        let result = parse_unwrap_eliminator_header(&mut input).unwrap();
+        assert_eq!(
+            result,
+            (
+                QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                EliminationStyle::Unwrap {
+                    token: 0,
+                    fields: Box::new([
+                        (Member::Named("head".into()), 1),
+                        (Member::Named("tail".into()), 2),
+                    ])
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_mutation_eliminator_header() {
+        let mut input = r#"[mutation] std::Vec ([%2] %1, [%4] %3)"#;
+        let result = parse_mutation_eliminator_header(&mut input).unwrap();
+        assert_eq!(
+            result,
+            (
+                QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                EliminationStyle::Mutation(Box::new([
+                    MakeMutReceiver {
+                        hole: 2,
+                        target: Member::Index(0),
+                        value: 1
+                    },
+                    MakeMutReceiver {
+                        hole: 4,
+                        target: Member::Index(1),
+                        value: 3
+                    }
+                ]))
+            )
+        );
+    }
+    #[test]
+    fn test_parse_inductive_elimination_instr() {
+        let mut input = r#"match %0 {
+            [fixpoint(%1)] std::Vec => { %2 = constant 3 : i32; return %2; }
+            [unwrap(%3)] std::Vec { head: %4, tail: %5 } => { %6 = constant 4 : i32; return %6; }
+        }"#;
+        let result = parse_inductive_elimination_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::InductiveElimination {
+                inductive: 0,
+                eliminator: Box::new([
+                    InductiveEliminator {
+                        ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                        style: EliminationStyle::Fixpoint(1),
+                        body: Block(vec![
+                            Lir::ConstantScalar {
+                                value: Box::new(ScalarConstant::I32(3)),
+                                result: 2
+                            },
+                            Lir::Return { value: 2 }
+                        ])
+                    },
+                    InductiveEliminator {
+                        ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                        style: EliminationStyle::Unwrap {
+                            token: 3,
+                            fields: Box::new([
+                                (Member::Named("head".into()), 4),
+                                (Member::Named("tail".into()), 5)
+                            ])
+                        },
+                        body: Block(vec![
+                            Lir::ConstantScalar {
+                                value: Box::new(ScalarConstant::I32(4)),
+                                result: 6
+                            },
+                            Lir::Return { value: 6 }
+                        ])
+                    }
+                ])
+            }
         );
     }
 }

@@ -18,9 +18,9 @@ pub enum ArithMode {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MakeMutReceiver {
-    target: Member,
-    hole: usize,
-    value: usize,
+    pub target: Member,
+    pub hole: usize,
+    pub value: usize,
 }
 
 impl MakeMutReceiver {
@@ -30,15 +30,20 @@ impl MakeMutReceiver {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EliminationStyle {
+    /// Destruct the pattern into values and memory token.
+    /// All values must be captured by some variable.
     Unwrap {
         fields: Box<[(Member, usize)]>,
         token: usize,
     },
-    Mutation {
-        holes: Box<[MakeMutReceiver]>,
-        value: usize,
-    },
+    /// Prepare the pattern for inplace mutation.
+    /// Partial field capture is allowed.
+    Mutation(Box<[MakeMutReceiver]>),
+    /// Obtain the original value
     Fixpoint(usize),
+    /// Get reference of fields
+    /// Partial field capture is allowed.
+    Ref(Box<[(Member, usize)]>),
 }
 
 fn member_list(members: &[(Member, usize)]) -> TokenStream {
@@ -86,11 +91,11 @@ fn make_mut_receivers(holes: &[MakeMutReceiver]) -> TokenStream {
     });
     if holes[0].is_named() {
         quote! {
-            { #(#fields),* }
+            { #(#fields,)* .. }
         }
     } else {
         quote! {
-            ( #(#fields),* )
+            ( #(#fields,)* .. )
         }
     }
 }
@@ -128,20 +133,20 @@ impl EliminationStyle {
                     };
                 }
             }
-            Self::Mutation { holes, value } => {
+            Self::Mutation(holes) => {
                 let qualified_name = qualified_name(ctor);
-                let value = variable(*value);
                 let old_value = variable(old_value);
                 let fields = make_mut_receivers(holes);
                 let holes = hole_declarations(holes);
                 quote! {
-                    let mut #value = #old_value;
+                    let mut #old_value = #old_value;
                     let #qualified_name #fields = *#old_value.make_mut() else {
                         unsafe { ::core::hint::unreachable_unchecked() }
                     };
                     #(#holes)*
                 }
             }
+            Self::Ref(..) => todo!("Ref"),
         }
     }
 }
@@ -532,15 +537,14 @@ mod tests {
             inductive: 1,
             eliminator: vec![InductiveEliminator {
                 ctor: QualifiedName::new(Box::new([Ident::new("Some")])),
-                style: EliminationStyle::Mutation {
-                    holes: vec![MakeMutReceiver {
+                style: EliminationStyle::Mutation(
+                    vec![MakeMutReceiver {
                         target: Member::Named(Ident::new("x")),
                         hole: 2,
                         value: 3,
                     }]
                     .into_boxed_slice(),
-                    value: 4,
-                },
+                ),
                 body: Block(vec![Lir::Return { value: 4 }]),
             }]
             .into_boxed_slice(),

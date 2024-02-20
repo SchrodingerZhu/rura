@@ -307,7 +307,7 @@ pub struct FunctionCall {
     /// Identifier of the function to call
     pub function: QualifiedName,
     /// Identifiers of the arguments
-    pub args: Vec<usize>,
+    pub args: Box<[usize]>,
     /// Identifier of the result
     pub result: usize,
 }
@@ -350,7 +350,7 @@ pub enum Lir {
         /// Identifier of the result
         result: usize,
     },
-    /// Closure creation (todo)
+    /// Closure creation
     Closure(Box<ClosureCreation>),
 
     /// Drop a value

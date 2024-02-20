@@ -8,7 +8,7 @@ use winnow::prelude::*;
 use winnow::*;
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, EliminationStyle, IfThenElse,
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, EliminationStyle, FunctionCall, IfThenElse,
     InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnOp, UnaryOp,
 };
 
@@ -679,6 +679,31 @@ fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
+    let operand_list = (
+        "(",
+        combinator::separated(0.., skip_space(parse_operand), ","),
+        ")",
+    )
+        .map(|(_, x, _)| Vec::into_boxed_slice(x));
+    (
+        parse_operand,
+        skip_space("="),
+        "call",
+        skip_space(qualified_name),
+        operand_list,
+        ";",
+    )
+        .map(|(result, _, _, function, args, _)| {
+            Lir::Call(Box::new(FunctionCall {
+                result,
+                function,
+                args,
+            }))
+        })
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -1057,5 +1082,19 @@ mod test {
         let mut input = r#"fill %1 <- %2;"#;
         let result = parse_fill_instr(&mut input).unwrap();
         assert_eq!(result, Lir::Fill { hole: 1, value: 2 });
+    }
+
+    #[test]
+    fn test_parse_call_instr() {
+        let mut input = r#"%1 = call test(%2, %3);"#;
+        let result = parse_call_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::Call(Box::new(FunctionCall {
+                result: 1,
+                function: QualifiedName::new(Box::new([Ident::new("test")])),
+                args: Box::new([2, 3])
+            }))
+        );
     }
 }

@@ -1,4 +1,3 @@
-#![allow(unused)]
 use rura_core::types::{LirType, ScalarType};
 use rura_core::Member;
 use rura_core::{types::TypeVar, Ident, QualifiedName};
@@ -110,7 +109,6 @@ fn parse_type_ref(i: &mut &str) -> PResult<LirType> {
 }
 
 fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
-    let inner = skip_space(parse_lir_type);
     let type_parameters = combinator::opt(
         (
             "<",
@@ -930,7 +928,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
         .parse_next(i)
 }
 
-fn parse_module(i: &mut &str) -> PResult<Module> {
+pub fn parse_module(i: &mut &str) -> PResult<Module> {
     enum ModuleItem {
         Function(FunctionDef),
         ExternFunction(FunctionPrototype),
@@ -973,7 +971,6 @@ fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_core::types::ScalarType;
 
     use super::*;
     #[test]
@@ -984,7 +981,7 @@ mod test {
     }
     #[test]
     fn test_skip_space() {
-        let mut input = r#"  
+        let input = r#"  
           // Hello, world!
           /* sdad */
           213

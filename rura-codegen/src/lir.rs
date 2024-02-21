@@ -253,6 +253,8 @@ pub struct CtorCall {
     pub token: Option<usize>,
     /// Identifier of the result
     pub result: usize,
+    /// Create unique rc instead of normal Rc (should be used for optimization only)
+    pub unique_rc: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnOp {

@@ -490,6 +490,13 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_return_instr,
         parse_closure_hoas,
         parse_if_then_else_instr,
+        parse_inductive_elimination_instr,
+        parse_fill_instr,
+        parse_call_instr,
+        parse_ctor_call_instr,
+        parse_clone_instr,
+        parse_drop_instr,
+        parse_drop_for_reuse_instr,
     ))
     .context(expect("lir instruction"))
     .parse_next(i)
@@ -715,10 +722,12 @@ fn parse_ctor_call_instr(i: &mut &str) -> PResult<Lir> {
         skip_space("@"),
         identifier,
         skip_space(parse_operand_list()),
+        combinator::opt("[unique]"),
+        ws_or_comment,
         ";",
     )
         .map(
-            |(result, _, _, token, (type_name, type_params), _, ctor, args, _)| {
+            |(result, _, _, token, (type_name, type_params), _, ctor, args, unique_rc, _, _)| {
                 Lir::CtorCall(Box::new(CtorCall {
                     result,
                     token,
@@ -726,9 +735,43 @@ fn parse_ctor_call_instr(i: &mut &str) -> PResult<Lir> {
                     type_params,
                     args,
                     ctor,
+                    unique_rc: unique_rc.is_some(),
                 }))
             },
         )
+        .parse_next(i)
+}
+
+fn parse_clone_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "clone",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(result, _, _, value, _)| Lir::Clone { result, value })
+        .parse_next(i)
+}
+
+fn parse_drop_instr(i: &mut &str) -> PResult<Lir> {
+    ("drop", skip_space(parse_operand), ";")
+        .map(|(_, value, _)| Lir::Drop { value, token: None })
+        .parse_next(i)
+}
+
+fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "drop",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(value, _, _, token, _)| Lir::Drop {
+            value,
+            token: Some(token),
+        })
         .parse_next(i)
 }
 
@@ -1138,7 +1181,8 @@ mod test {
                 type_name: QualifiedName::new(Box::new([Ident::new("List")])),
                 type_params: Box::new([]),
                 ctor: "Cons".into(),
-                args: Box::new([4, 6])
+                args: Box::new([4, 6]),
+                unique_rc: false,
             }))
         );
     }

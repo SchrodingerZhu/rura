@@ -734,8 +734,12 @@ fn parse_bounded_type_var(i: &mut &str) -> PResult<Bound> {
 }
 
 fn parse_function_prototype(i: &mut &str) -> PResult<FunctionPrototype> {
-    let type_params = opt(("<", separated(1.., skip_space(identifier::<Ident>), ","), ">"))
-        .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    let type_params = opt((
+        "<",
+        separated(1.., skip_space(identifier::<Ident>), ","),
+        ">",
+    ))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
     let params = (
         "(",
         separated(
@@ -818,9 +822,13 @@ fn parse_ctor_def(i: &mut &str) -> PResult<CtorDef> {
 }
 
 fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
-    let type_params = opt(("<", separated(1.., skip_space(identifier::<Ident>), ","), ">"))
-        .context(expect("type parameters"))
-        .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    let type_params = opt((
+        "<",
+        separated(1.., skip_space(identifier::<Ident>), ","),
+        ">",
+    ))
+    .context(expect("type parameters"))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
     let bounds = opt((
         "where",
         separated(1.., skip_space(parse_bounded_type_var), ","),

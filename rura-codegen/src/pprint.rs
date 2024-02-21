@@ -67,8 +67,15 @@ impl Display for PrettyPrint<'_, LirType> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::parser::parse_module;
     use rura_core::types::ScalarType;
     use rura_core::{Ident, QualifiedName};
+    fn assert_type_eq(ty: &LirType) {
+        let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint(ty));
+        let mut input = src.as_str();
+        let module = parse_module(&mut input).unwrap();
+        assert_eq!(&module.external_functions[0].return_type, ty);
+    }
     #[test]
     fn test_lir_type_pretty_print() {
         let ty = LirType::Object(
@@ -76,5 +83,17 @@ mod test {
             Box::new([LirType::Scalar(ScalarType::USize)]),
         );
         assert_eq!(format!("{}", PrettyPrint(&ty)), "std::Option<usize>");
+        assert_type_eq(&ty);
+        assert_type_eq(&LirType::Scalar(ScalarType::USize));
+        assert_type_eq(&LirType::Tuple(Box::new([LirType::Scalar(
+            ScalarType::USize,
+        )])));
+        assert_type_eq(&LirType::Closure(
+            Box::new([LirType::Scalar(ScalarType::USize)]),
+            Box::new(LirType::Scalar(ScalarType::USize)),
+        ));
+        assert_type_eq(&LirType::Ref(Box::new(LirType::Scalar(ScalarType::USize))));
+        assert_type_eq(&LirType::TypeVar(TypeVar::Plain(Ident::new("T"))));
+        assert_type_eq(&LirType::Hole(Box::new(LirType::Scalar(ScalarType::USize))));
     }
 }

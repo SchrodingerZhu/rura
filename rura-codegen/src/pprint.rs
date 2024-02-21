@@ -1,7 +1,13 @@
-use rura_core::types::{LirType, TypeVar};
+use rura_core::{
+    types::{LirType, TypeVar},
+    Member, QualifiedName,
+};
 use std::fmt::{Display, Formatter};
 
-use crate::lir::{ArithMode, BinOp, BinaryOp, Block, ClosureCreation, FunctionCall, Lir};
+use crate::lir::{
+    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
+    IfThenElse, InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnaryOp,
+};
 
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
@@ -232,6 +238,159 @@ impl Display for PrettyPrint<'_, ClosureCreation> {
     }
 }
 
+impl Display for PrettyPrint<'_, ScalarConstant> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.target {
+            ScalarConstant::I8(x) => write!(f, "{} : i8", x),
+            ScalarConstant::I16(x) => write!(f, "{} : i16", x),
+            ScalarConstant::I32(x) => write!(f, "{} : i32", x),
+            ScalarConstant::I64(x) => write!(f, "{} : i64", x),
+            ScalarConstant::I128(x) => write!(f, "{} : i128", x),
+            ScalarConstant::ISize(x) => write!(f, "{} : isize", x),
+            ScalarConstant::U8(x) => write!(f, "{} : u8", x),
+            ScalarConstant::U16(x) => write!(f, "{} : u16", x),
+            ScalarConstant::U32(x) => write!(f, "{} : u32", x),
+            ScalarConstant::U64(x) => write!(f, "{} : u64", x),
+            ScalarConstant::U128(x) => write!(f, "{} : u128", x),
+            ScalarConstant::USize(x) => write!(f, "{} : usize", x),
+            ScalarConstant::F32(x) => write!(f, "{} : f32", x),
+            ScalarConstant::F64(x) => write!(f, "{} : f64", x),
+            ScalarConstant::Bool(x) => write!(f, "{} : bool", x),
+            ScalarConstant::Char(x) => write!(f, "{} : char", *x as u32),
+        }
+    }
+}
+
+impl Display for PrettyPrint<'_, IfThenElse> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "if %{} {} else {}",
+            self.target.condition,
+            self.same_level(&self.target.then_branch),
+            self.same_level(&self.target.else_branch)
+        )
+    }
+}
+
+impl Display for PrettyPrint<'_, UnaryOp> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "%{} = {}%{};",
+            self.target.result,
+            match self.target.op {
+                crate::lir::UnOp::Neg => "-",
+                crate::lir::UnOp::Not => "!",
+            },
+            self.target.operand
+        )
+    }
+}
+
+impl Display for PrettyPrint<'_, CtorCall> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%{} = new", self.target.result)?;
+        if let Some(token) = self.target.token {
+            write!(f, " [%{}]", token)?;
+        }
+        write!(f, " {}", self.target.type_name)?;
+        if !self.target.type_params.is_empty() {
+            write!(f, "<")?;
+            print_separated(
+                f,
+                self.target.type_params.iter().map(PrettyPrint::new),
+                ", ",
+            )?;
+            write!(f, ">")?;
+        }
+        write!(f, " @ {} (", self.target.ctor)?;
+        if !self.target.args.is_empty() {
+            print_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
+        }
+        write!(f, ")")?;
+        if self.target.unique_rc {
+            write!(f, " [unique]")?;
+        }
+        write!(f, ";")
+    }
+}
+
+#[repr(transparent)]
+struct Binding<'a>(&'a (Member, usize));
+
+impl Display for Binding<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.0 .0 {
+            Member::Named(ident) => write!(f, "{} : {}", ident, Var(self.0 .1)),
+            Member::Index(_) => write!(f, "{}", Var(self.0 .1)),
+        }
+    }
+}
+
+impl Display for PrettyPrint<'_, MakeMutReceiver> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.target.target {
+            Member::Named(ident) => write!(
+                f,
+                "[%{}] {} : %{}",
+                self.target.hole, ident, self.target.value
+            ),
+            Member::Index(_) => write!(f, "[%{}] %{}", self.target.hole, self.target.value),
+        }
+    }
+}
+
+fn print_binding_list(f: &mut Formatter<'_>, bindings: &[(Member, usize)]) -> std::fmt::Result {
+    if bindings[0].0.is_named() {
+        write!(f, "{{")?;
+        print_separated(f, bindings.iter().map(Binding), ", ")?;
+        write!(f, "}}")
+    } else {
+        write!(f, "(")?;
+        print_separated(f, bindings.iter().map(Binding), ", ")?;
+        write!(f, ")")
+    }
+}
+
+fn print_match_arm_header(
+    style: &EliminationStyle,
+    ctor: &QualifiedName,
+    f: &mut Formatter<'_>,
+) -> std::fmt::Result {
+    match style {
+        EliminationStyle::Unwrap { fields, token } => {
+            write!(f, "[unwrap(%{token})] {ctor}")?;
+            print_binding_list(f, fields)
+        }
+        EliminationStyle::Mutation(bindings) => {
+            write!(f, "[mutation] {}", ctor)?;
+            if bindings[0].target.is_named() {
+                write!(f, "{{")?;
+                print_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
+                write!(f, "}}")
+            } else {
+                write!(f, "(")?;
+                print_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
+                write!(f, ")")
+            }
+        }
+        EliminationStyle::Fixpoint(x) => write!(f, "[fixpoint(%{x})] {}", ctor),
+        EliminationStyle::Ref(x) => {
+            write!(f, "[ref] {}", ctor)?;
+            print_binding_list(f, x)
+        }
+    }
+}
+
+impl Display for PrettyPrint<'_, InductiveEliminator> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", "\t".repeat(self.indent))?;
+        print_match_arm_header(&self.target.style, &self.target.ctor, f)?;
+        write!(f, " => {}", self.same_level(&self.target.body))
+    }
+}
+
 impl Display for PrettyPrint<'_, Lir> {
     #[allow(unused)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -250,18 +409,34 @@ impl Display for PrettyPrint<'_, Lir> {
                 Some(token) => write!(f, "%{} = drop %{};", token, value),
                 None => write!(f, "drop %{};", value),
             },
-            Lir::CtorCall(_) => todo!(),
+            Lir::CtorCall(inner) => write!(f, "{}", PrettyPrint::new(&**inner)),
             Lir::InductiveElimination {
                 inductive,
                 eliminator,
-            } => todo!(),
+            } => {
+                write!(f, "match %{} {{", inductive)?;
+                for arm in eliminator.iter() {
+                    write!(f, "\n{}", self.next_level(arm))?;
+                }
+                write!(f, "\n{}}}", "\t".repeat(self.indent))
+            }
             Lir::Return { value } => write!(f, "return %{};", value),
-            Lir::TupleIntro { elements, result } => todo!(),
-            Lir::TupleElim { tuple, eliminator } => todo!(),
-            Lir::UnaryOp(_) => todo!(),
-            Lir::IfThenElse(_) => todo!(),
-            Lir::ConstantScalar { value, result } => todo!(),
-            Lir::Fill { hole, value } => todo!(),
+            Lir::TupleIntro { elements, result } => {
+                write!(f, "%{} = (", result)?;
+                print_separated(f, elements.iter().copied().map(Var), ", ")?;
+                write!(f, ");")
+            }
+            Lir::TupleElim { tuple, eliminator } => {
+                write!(f, "(")?;
+                print_separated(f, eliminator.iter().copied().map(Var), ", ")?;
+                write!(f, ") = %{};", tuple)
+            }
+            Lir::UnaryOp(inner) => write!(f, "{}", self.same_level(&**inner)),
+            Lir::IfThenElse(inner) => write!(f, "{}", self.same_level(&**inner)),
+            Lir::ConstantScalar { value, result } => {
+                write!(f, "%{} = constant {};", result, PrettyPrint::new(&**value))
+            }
+            Lir::Fill { hole, value } => write!(f, "fill %{} <- %{};", hole, value),
         }
     }
 }
@@ -375,5 +550,142 @@ mod test {
             token: None,
         };
         assert_lir_eq(&drop);
+    }
+    #[test]
+    fn test_fill_pprint() {
+        let fill = Lir::Fill { hole: 0, value: 1 };
+        assert_lir_eq(&fill);
+    }
+    #[test]
+    fn test_constant_char_pprint() {
+        let constant = Lir::ConstantScalar {
+            value: Box::new(ScalarConstant::Char('a')),
+            result: 0,
+        };
+        assert_lir_eq(&constant);
+    }
+    #[test]
+    fn test_constant_bool_pprint() {
+        let constant = Lir::ConstantScalar {
+            value: Box::new(ScalarConstant::Bool(true)),
+            result: 0,
+        };
+        assert_lir_eq(&constant);
+    }
+    #[test]
+    fn test_if_then_else_pprint() {
+        let if_then_else = IfThenElse {
+            condition: 0,
+            then_branch: Block([Lir::Return { value: 1 }].into()),
+            else_branch: Block([Lir::Return { value: 2 }].into()),
+        };
+        assert_lir_eq(&Lir::IfThenElse(Box::new(if_then_else)));
+    }
+    #[test]
+    fn test_unary_op_pprint() {
+        let unary_op = UnaryOp {
+            result: 0,
+            op: crate::lir::UnOp::Neg,
+            operand: 1,
+        };
+        assert_lir_eq(&Lir::UnaryOp(Box::new(unary_op)));
+        let unary_op = UnaryOp {
+            result: 0,
+            op: crate::lir::UnOp::Not,
+            operand: 1,
+        };
+        assert_lir_eq(&Lir::UnaryOp(Box::new(unary_op)));
+    }
+    #[test]
+    fn test_tuple_elim_pprint() {
+        let tuple_elim = Lir::TupleElim {
+            tuple: 0,
+            eliminator: [1, 2].into(),
+        };
+        assert_lir_eq(&tuple_elim);
+    }
+    #[test]
+    fn test_tuple_intro_pprint() {
+        let tuple_intro = Lir::TupleIntro {
+            elements: [0, 1].into(),
+            result: 2,
+        };
+        assert_lir_eq(&tuple_intro);
+    }
+    #[test]
+    fn test_ctor_call_pprint_without_token() {
+        let ctor_call = CtorCall {
+            result: 0,
+            type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
+            ctor: Ident::new("Some"),
+            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            args: [1].into(),
+            token: None,
+            unique_rc: false,
+        };
+        assert_lir_eq(&Lir::CtorCall(Box::new(ctor_call)));
+    }
+    #[test]
+    fn test_ctor_call_pprint_with_token() {
+        let ctor_call = CtorCall {
+            result: 0,
+            type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
+            ctor: Ident::new("Some"),
+            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            args: [1].into(),
+            token: Some(2),
+            unique_rc: false,
+        };
+        assert_lir_eq(&Lir::CtorCall(Box::new(ctor_call)));
+    }
+    #[test]
+    fn test_ctor_call_pprint_unqiue_rc() {
+        let ctor_call = CtorCall {
+            result: 0,
+            type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
+            ctor: Ident::new("Some"),
+            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            args: [1].into(),
+            token: None,
+            unique_rc: true,
+        };
+        assert_lir_eq(&Lir::CtorCall(Box::new(ctor_call)));
+    }
+    #[test]
+    fn test_inductive_elim_pprint() {
+        let test = Lir::InductiveElimination {
+            inductive: 0,
+            eliminator: Box::new([
+                InductiveEliminator {
+                    ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                    style: EliminationStyle::Fixpoint(1),
+                    body: Block(vec![
+                        Lir::ConstantScalar {
+                            value: Box::new(ScalarConstant::I32(3)),
+                            result: 2,
+                        },
+                        Lir::Return { value: 2 },
+                    ]),
+                },
+                InductiveEliminator {
+                    ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
+                    style: EliminationStyle::Unwrap {
+                        token: 3,
+                        fields: Box::new([
+                            (Member::Named("head".into()), 4),
+                            (Member::Named("tail".into()), 5),
+                        ]),
+                    },
+                    body: Block(vec![
+                        Lir::ConstantScalar {
+                            value: Box::new(ScalarConstant::I32(4)),
+                            result: 6,
+                        },
+                        Lir::Return { value: 6 },
+                    ]),
+                },
+            ]),
+        };
+        assert_lir_eq(&test);
     }
 }

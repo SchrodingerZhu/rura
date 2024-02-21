@@ -6,21 +6,17 @@ use winnow::{PResult, Parser};
 use rura_core::types::{LirType, ScalarType};
 use rura_core::Member;
 use rura_core::{types::TypeVar, Ident, QualifiedName};
-use rura_parsing::{expect, identifier, keywords, skip_space, ws_or_comment};
+use rura_parsing::keywords::{BOTTOM, UNIT};
+use rura_parsing::{
+    expect, identifier, keywords, optional_type_parameters, qualified_name, skip_space,
+    ws_or_comment,
+};
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
     InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnOp, UnaryOp,
 };
-
-fn parse_unit(i: &mut &str) -> PResult<LirType> {
-    keywords::UNIT.map(|_| LirType::Unit).parse_next(i)
-}
-
-fn parse_bottom(i: &mut &str) -> PResult<LirType> {
-    keywords::BOTTOM.map(|_| LirType::Bottom).parse_next(i)
-}
 
 fn parse_scalar_type(i: &mut &str) -> PResult<ScalarType> {
     let mut dispatch = dispatch! {
@@ -44,13 +40,6 @@ fn parse_scalar_type(i: &mut &str) -> PResult<ScalarType> {
         _ => fail,
     };
     dispatch.parse_next(i)
-}
-
-fn qualified_name(input: &mut &str) -> PResult<QualifiedName> {
-    separated(1.., identifier::<Ident>, "::")
-        .map(|idents: Vec<Ident>| QualifiedName::new(idents.into_boxed_slice()))
-        .context(expect("qualified name"))
-        .parse_next(input)
 }
 
 fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
@@ -90,8 +79,8 @@ fn parse_closure_type(i: &mut &str) -> PResult<LirType> {
 
 fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     alt((
-        parse_unit,
-        parse_bottom,
+        UNIT.map(|_| LirType::Unit),
+        BOTTOM.map(|_| LirType::Bottom),
         parse_scalar_type.map(LirType::Scalar),
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
@@ -822,13 +811,6 @@ fn parse_ctor_def(i: &mut &str) -> PResult<CtorDef> {
 }
 
 fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
-    let type_params = opt((
-        "<",
-        separated(1.., skip_space(identifier::<Ident>), ","),
-        ">",
-    ))
-    .context(expect("type parameters"))
-    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
     let bounds = opt((
         "where",
         separated(1.., skip_space(parse_bounded_type_var), ","),
@@ -841,7 +823,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
     (
         "enum",
         skip_space(qualified_name).context(expect("qualified name")),
-        type_params,
+        optional_type_parameters,
         skip_space(bounds),
         "{",
         ctors,

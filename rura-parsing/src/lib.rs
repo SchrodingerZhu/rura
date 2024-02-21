@@ -1,6 +1,6 @@
 use unicode_ident::{is_xid_continue, is_xid_start};
 use winnow::ascii::{multispace1, till_line_ending};
-use winnow::combinator::{alt, delimited, repeat};
+use winnow::combinator::{alt, delimited, opt, repeat, separated};
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::{one_of, take_until, take_while};
 use winnow::{PResult, Parser};
@@ -42,6 +42,27 @@ where
         .recognize()
         .map(|s| T::from(s))
         .context(expect("identifier"))
+        .parse_next(i)
+}
+
+pub fn qualified_name<'a, Identifier, Qualified>(input: &mut &'a str) -> PResult<Qualified>
+where
+    Identifier: From<&'a str>,
+    Qualified: From<Box<[Identifier]>>,
+{
+    separated(1.., identifier::<Identifier>, "::")
+        .map(|idents: Vec<_>| Qualified::from(idents.into_boxed_slice()))
+        .context(expect("qualified name"))
+        .parse_next(input)
+}
+
+pub fn optional_type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
+where
+    T: From<&'a str>,
+{
+    opt(("<", separated(1.., skip_space(identifier::<T>), ","), ">"))
+        .context(expect("type parameters"))
+        .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1))
         .parse_next(i)
 }
 

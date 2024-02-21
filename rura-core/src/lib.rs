@@ -64,6 +64,12 @@ impl QualifiedName {
     }
 }
 
+impl From<Box<[Ident]>> for QualifiedName {
+    fn from(s: Box<[Ident]>) -> Self {
+        Self::new(s)
+    }
+}
+
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fmt_separated(f, &self.0, "::")

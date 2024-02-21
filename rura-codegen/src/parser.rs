@@ -690,7 +690,7 @@ fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
         skip_space(parse_operand),
         ";",
     )
-        .map(|(value, _, _, token, _)| Lir::Drop {
+        .map(|(token, _, _, value, _)| Lir::Drop {
             value,
             token: Some(token),
         })

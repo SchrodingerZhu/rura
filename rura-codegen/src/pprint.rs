@@ -246,7 +246,10 @@ impl Display for PrettyPrint<'_, Lir> {
             Lir::Call(call) => write!(f, "{}", PrettyPrint::new(&**call)),
             Lir::Clone { value, result } => write!(f, "%{} = clone %{};", result, value),
             Lir::Closure(x) => write!(f, "{}", self.same_level(&**x)),
-            Lir::Drop { value, token } => todo!(),
+            Lir::Drop { value, token } => match token {
+                Some(token) => write!(f, "%{} = drop %{};", token, value),
+                None => write!(f, "drop %{};", value),
+            },
             Lir::CtorCall(_) => todo!(),
             Lir::InductiveElimination {
                 inductive,
@@ -359,5 +362,18 @@ mod test {
             body: Block([Lir::Return { value: 1 }].into()),
         };
         assert_lir_eq(&Lir::Closure(Box::new(closure)));
+    }
+    #[test]
+    fn test_drop_pprint() {
+        let drop = Lir::Drop {
+            value: 0,
+            token: Some(1),
+        };
+        assert_lir_eq(&drop);
+        let drop = Lir::Drop {
+            value: 0,
+            token: None,
+        };
+        assert_lir_eq(&drop);
     }
 }

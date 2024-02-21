@@ -364,7 +364,7 @@ fn parse_block(i: &mut &str) -> PResult<Block> {
 
 fn parse_closure_params(i: &mut &str) -> PResult<Box<[(usize, LirType)]>> {
     let param_pair = (parse_operand, skip_space(":"), parse_lir_type).map(|(x, _, y)| (x, y));
-    let inner = separated(1.., skip_space(param_pair), ",").map(|x: Vec<_>| x.into_boxed_slice());
+    let inner = separated(0.., skip_space(param_pair), ",").map(|x: Vec<_>| x.into_boxed_slice());
     ("(", inner, ")")
         .map(|(_, x, _)| x)
         .context(expect("closure parameters"))
@@ -419,6 +419,7 @@ fn parse_if_then_else_instr(i: &mut &str) -> PResult<Lir> {
 
 fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
     alt((
+        parse_closure_hoas,
         parse_constant_instr,
         parse_apply_instr,
         parse_tuple_intro_instr,
@@ -426,7 +427,6 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_unary_ops,
         parse_bin_ops,
         parse_return_instr,
-        parse_closure_hoas,
         parse_if_then_else_instr,
         parse_inductive_elimination_instr,
         parse_fill_instr,
@@ -767,7 +767,11 @@ fn parse_function_prototype(i: &mut &str) -> PResult<FunctionPrototype> {
 }
 
 fn parse_function_def(i: &mut &str) -> PResult<FunctionDef> {
-    (parse_function_prototype, ws_or_comment, parse_block)
+    (
+        parse_function_prototype,
+        ws_or_comment,
+        parse_block.context(expect("function body")),
+    )
         .map(|(prototype, _, body)| FunctionDef { prototype, body })
         .parse_next(i)
 }
@@ -857,7 +861,7 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
         skip_space("module"),
         qualified_name,
         skip_space("{"),
-        items,
+        items.context(expect("module items")),
         skip_space("}"),
     )
         .map(|(_, name, _, items, _)| {

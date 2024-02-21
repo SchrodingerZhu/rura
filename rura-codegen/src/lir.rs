@@ -285,6 +285,7 @@ pub enum BinOp {
     And,
     Or,
 }
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BinaryOp {
     /// The binary operation to perform

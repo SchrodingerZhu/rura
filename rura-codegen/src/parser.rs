@@ -8,8 +8,9 @@ use winnow::prelude::*;
 use winnow::*;
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
-    IfThenElse, InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnOp, UnaryOp,
+    ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
+    FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnOp, UnaryOp,
 };
 
 fn eol_comment(i: &mut &str) -> PResult<()> {
@@ -775,6 +776,201 @@ fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
+fn parse_trait_expr(i: &mut &str) -> PResult<TraitExpr> {
+    let named_param =
+        (identifier, skip_space("="), parse_lir_type).map(|(name, _, ty)| (Some(name), ty));
+    let unnamed_param = parse_lir_type.map(|ty| (None, ty));
+    let param = combinator::alt((named_param, unnamed_param));
+    let params = combinator::opt(("<", combinator::separated(1.., skip_space(param), ","), ">"))
+        .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    (qualified_name, params)
+        .map(|(name, params)| TraitExpr { name, params })
+        .parse_next(i)
+}
+
+fn parse_bounded_type_var(i: &mut &str) -> PResult<Bound> {
+    (
+        parse_type_variable,
+        skip_space(":"),
+        combinator::separated(1.., skip_space(parse_trait_expr), "+"),
+    )
+        .map(|(target, _, traits)| Bound {
+            target,
+            bounds: Vec::into_boxed_slice(traits),
+        })
+        .parse_next(i)
+}
+
+fn parse_function_prototype(i: &mut &str) -> PResult<FunctionPrototype> {
+    let type_params = combinator::opt((
+        "<",
+        combinator::separated(1.., skip_space(identifier), ","),
+        ">",
+    ))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    let params = (
+        "(",
+        combinator::separated(
+            0..,
+            skip_space((parse_operand, skip_space(":"), parse_lir_type)).map(|(x, _, y)| (x, y)),
+            ",",
+        ),
+        ")",
+    )
+        .map(|x| Vec::into_boxed_slice(x.1));
+
+    let bounds = combinator::opt((
+        "where",
+        combinator::separated(1.., skip_space(parse_bounded_type_var), ","),
+    ))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    (
+        "fn",
+        skip_space(qualified_name),
+        type_params,
+        skip_space(params),
+        "->",
+        skip_space(parse_lir_type),
+        bounds,
+    )
+        .map(
+            |(_, name, type_params, params, _, return_type, bounds)| FunctionPrototype {
+                name,
+                type_params,
+                params,
+                return_type,
+                bounds,
+            },
+        )
+        .parse_next(i)
+}
+
+fn parse_function_def(i: &mut &str) -> PResult<FunctionDef> {
+    (parse_function_prototype, ws_or_comment, parse_block)
+        .map(|(prototype, _, body)| FunctionDef { prototype, body })
+        .parse_next(i)
+}
+
+fn parse_extern_function_def(i: &mut &str) -> PResult<FunctionPrototype> {
+    (parse_function_prototype, ";")
+        .map(|(x, _)| x)
+        .parse_next(i)
+}
+
+fn parse_named_member_list(i: &mut &str) -> PResult<Box<[(Member, LirType)]>> {
+    let field = (identifier, skip_space(":"), parse_lir_type)
+        .map(|(name, _, ty)| (Member::Named(name.clone()), ty));
+    ("{", combinator::separated(1.., skip_space(field), ","), "}")
+        .map(|(_, x, _)| Vec::into_boxed_slice(x))
+        .context(expect("named member list"))
+        .parse_next(i)
+}
+
+fn parse_unnamed_member_list(i: &mut &str) -> PResult<Box<[(Member, LirType)]>> {
+    let inner = combinator::separated(1.., skip_space(parse_lir_type), ",").map(|x: Vec<_>| {
+        x.into_iter()
+            .enumerate()
+            .map(|(idx, ty)| (Member::Index(idx), ty))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    ("(", inner, ")")
+        .map(|(_, x, _)| x)
+        .context(expect("unnamed member list"))
+        .parse_next(i)
+}
+
+fn parse_ctor_def(i: &mut &str) -> PResult<CtorDef> {
+    let member_list = combinator::opt(combinator::alt((
+        parse_named_member_list,
+        parse_unnamed_member_list,
+    )))
+    .map(|x| x.unwrap_or_default());
+    (identifier, skip_space(member_list))
+        .map(|(name, params)| CtorDef { name, params })
+        .context(expect("constructor definition"))
+        .parse_next(i)
+}
+
+fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
+    let type_params = combinator::opt((
+        "<",
+        combinator::separated(1.., skip_space(identifier), ","),
+        ">",
+    ))
+    .context(expect("type parameters"))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    let bounds = combinator::opt((
+        "where",
+        combinator::separated(1.., skip_space(parse_bounded_type_var), ","),
+    ))
+    .context(expect("type bounds"))
+    .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
+    let ctors = combinator::separated(1.., skip_space(parse_ctor_def), ",")
+        .context(expect("constructors"))
+        .map(Vec::into_boxed_slice);
+    (
+        "enum",
+        skip_space(qualified_name).context(expect("qualified name")),
+        type_params,
+        skip_space(bounds),
+        "{",
+        ctors,
+        "}",
+    )
+        .map(
+            |(_, name, type_params, bounds, _, ctors, _)| InductiveTypeDef {
+                name,
+                type_params,
+                bounds,
+                ctors,
+            },
+        )
+        .context(expect("inductive type definition"))
+        .parse_next(i)
+}
+
+fn parse_module(i: &mut &str) -> PResult<Module> {
+    enum ModuleItem {
+        Function(FunctionDef),
+        ExternFunction(FunctionPrototype),
+        InductiveType(InductiveTypeDef),
+    }
+    let inner = combinator::alt((
+        parse_function_def.map(ModuleItem::Function),
+        parse_extern_function_def.map(ModuleItem::ExternFunction),
+        parse_inductive_type_def.map(ModuleItem::InductiveType),
+    ));
+    let items = combinator::separated(0.., inner, ws_or_comment);
+    (
+        skip_space("module"),
+        qualified_name,
+        skip_space("{"),
+        items,
+        skip_space("}"),
+    )
+        .map(|(_, name, _, items, _)| {
+            let mut functions = Vec::new();
+            let mut external_functions = Vec::new();
+            let mut inductive_types = Vec::new();
+            for item in Vec::into_iter(items) {
+                match item {
+                    ModuleItem::Function(x) => functions.push(x),
+                    ModuleItem::ExternFunction(x) => external_functions.push(x),
+                    ModuleItem::InductiveType(x) => inductive_types.push(x),
+                }
+            }
+            Module {
+                name,
+                functions: functions.into_boxed_slice(),
+                external_functions: external_functions.into_boxed_slice(),
+                inductive_types: inductive_types.into_boxed_slice(),
+            }
+        })
+        .context(expect("module"))
+        .parse_next(i)
+}
+
 #[cfg(test)]
 mod test {
     use rura_core::types::ScalarType;
@@ -1185,5 +1381,169 @@ mod test {
                 unique_rc: false,
             }))
         );
+    }
+
+    #[test]
+    fn test_parse_clone_drop_in_block() {
+        let mut input = r#"{
+            %1 = clone %2;
+            drop %3;
+            drop %4;
+            drop %5;
+        }"#;
+        let result = parse_block(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Block(vec![
+                Lir::Clone {
+                    result: 1,
+                    value: 2
+                },
+                Lir::Drop {
+                    value: 3,
+                    token: None
+                },
+                Lir::Drop {
+                    value: 4,
+                    token: None
+                },
+                Lir::Drop {
+                    value: 5,
+                    token: None
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_bounded_type_var() {
+        let mut input = r#"@T: std::TraitFoo + std::TraitBar<Head = ()>"#;
+        let result = parse_bounded_type_var(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Bound {
+                target: TypeVar::Plain(Ident::new("T")),
+                bounds: Box::new([
+                    TraitExpr {
+                        name: QualifiedName::new(Box::new([
+                            Ident::new("std"),
+                            Ident::new("TraitFoo")
+                        ])),
+                        params: Box::new([])
+                    },
+                    TraitExpr {
+                        name: QualifiedName::new(Box::new([
+                            Ident::new("std"),
+                            Ident::new("TraitBar")
+                        ])),
+                        params: Box::new([(Some(Ident::new("Head")), LirType::Unit,)])
+                    }
+                ])
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_function_prototype() {
+        let mut test = r#"fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>"#;
+        let result = parse_function_prototype(&mut test).unwrap();
+        assert_eq!(
+            result,
+            FunctionPrototype {
+                name: QualifiedName::new(Box::new([Ident::new("test")])),
+                type_params: Box::new([Ident::new("T")]),
+                params: Box::new([
+                    (1, LirType::Scalar(ScalarType::I32)),
+                    (2, LirType::Scalar(ScalarType::F64))
+                ]),
+                return_type: LirType::Scalar(ScalarType::I32),
+                bounds: Box::new([Bound {
+                    target: TypeVar::Plain(Ident::new("T")),
+                    bounds: Box::new([
+                        TraitExpr {
+                            name: QualifiedName::new(Box::new([
+                                Ident::new("std"),
+                                Ident::new("TraitFoo")
+                            ])),
+                            params: Box::new([])
+                        },
+                        TraitExpr {
+                            name: QualifiedName::new(Box::new([
+                                Ident::new("std"),
+                                Ident::new("TraitBar")
+                            ])),
+                            params: Box::new([(Some(Ident::new("Head")), LirType::Unit,)])
+                        }
+                    ])
+                }])
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_inductive_type_def() {
+        let mut test = r#"enum List<T> 
+            where @T: Foo
+        { Nil, Cons(@T, List<@T>) }"#;
+        let result = parse_inductive_type_def(&mut test).unwrap();
+        assert_eq!(
+            result,
+            InductiveTypeDef {
+                name: QualifiedName::new(Box::new([Ident::new("List")])),
+                type_params: Box::new([Ident::new("T")]),
+                bounds: Box::new([Bound {
+                    target: TypeVar::Plain(Ident::new("T")),
+                    bounds: Box::new([TraitExpr {
+                        name: QualifiedName::new(Box::new([Ident::new("Foo")])),
+                        params: Box::new([])
+                    }])
+                }]),
+                ctors: Box::new([
+                    CtorDef {
+                        name: "Nil".into(),
+                        params: Box::new([])
+                    },
+                    CtorDef {
+                        name: "Cons".into(),
+                        params: Box::new([
+                            (
+                                Member::Index(0),
+                                LirType::TypeVar(TypeVar::Plain(Ident::new("T")))
+                            ),
+                            (
+                                Member::Index(1),
+                                LirType::Object(
+                                    QualifiedName::new(Box::new([Ident::new("List")])),
+                                    Box::new([LirType::TypeVar(TypeVar::Plain(Ident::new("T")))])
+                                )
+                            )
+                        ])
+                    }
+                ])
+            }
+        );
+    }
+
+    const MODULE: &str = r#"
+module test {
+    enum List<T> 
+        where @T: Foo
+    { Nil, Cons(@T, List<@T>) }
+    fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()> {
+        %3 = constant 3 : i32;
+        return %3;
+    }
+    fn test2() -> i32 {
+        %1 = constant 3 : i32;
+        return %1;
+    }
+    fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
+}    
+"#;
+    #[test]
+    fn parse_module_test() {
+        let mut input = MODULE;
+        let module = parse_module(&mut input).unwrap();
+        println!("{:#?}\n", module);
     }
 }

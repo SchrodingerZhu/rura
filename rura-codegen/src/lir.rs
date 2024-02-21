@@ -2,7 +2,10 @@ use std::hash::Hash;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use rura_core::{types::LirType, Ident, Member, QualifiedName};
+use rura_core::{
+    types::{LirType, TypeVar},
+    Ident, Member, QualifiedName,
+};
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
  */
@@ -465,6 +468,55 @@ impl Lir {
             _ => unimplemented!(),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TraitExpr {
+    pub name: QualifiedName,
+    pub params: Box<[(Option<Ident>, LirType)]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Bound {
+    pub target: TypeVar,
+    pub bounds: Box<[TraitExpr]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FunctionPrototype {
+    pub name: QualifiedName,
+    pub type_params: Box<[Ident]>,
+    pub bounds: Box<[Bound]>,
+    pub params: Box<[(usize, LirType)]>,
+    pub return_type: LirType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FunctionDef {
+    pub prototype: FunctionPrototype,
+    pub body: Block,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CtorDef {
+    pub name: Ident,
+    pub params: Box<[(Member, LirType)]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InductiveTypeDef {
+    pub name: QualifiedName,
+    pub type_params: Box<[Ident]>,
+    pub bounds: Box<[Bound]>,
+    pub ctors: Box<[CtorDef]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Module {
+    pub name: QualifiedName,
+    pub functions: Box<[FunctionDef]>,
+    pub external_functions: Box<[FunctionPrototype]>,
+    pub inductive_types: Box<[InductiveTypeDef]>,
 }
 
 #[cfg(test)]

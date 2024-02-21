@@ -1,10 +1,12 @@
+use winnow::ascii::alpha1;
+use winnow::error::ContextError;
+use winnow::prelude::*;
+use winnow::*;
+
 use rura_core::types::{LirType, ScalarType};
 use rura_core::Member;
 use rura_core::{types::TypeVar, Ident, QualifiedName};
-use winnow::ascii::alpha1;
-use winnow::error::{ContextError, StrContext, StrContextValue};
-use winnow::prelude::*;
-use winnow::*;
+use rura_parsing::{expect, skip_space, ws_or_comment};
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
@@ -12,45 +14,12 @@ use crate::lir::{
     InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnOp, UnaryOp,
 };
 
-fn eol_comment(i: &mut &str) -> PResult<()> {
-    ("//", winnow::ascii::till_line_ending)
-        .void() // Output is thrown away.
-        .parse_next(i)
-}
-
-fn multiline_comment(i: &mut &str) -> PResult<()> {
-    ("/*", token::take_until(0.., "*/"), "*/")
-        .void() // Output is thrown away.
-        .parse_next(i)
-}
-
-fn ws_or_comment(i: &mut &str) -> PResult<()> {
-    combinator::repeat(
-        0..,
-        combinator::alt((ascii::multispace1.void(), eol_comment, multiline_comment)),
-    )
-    .parse_next(i)
-}
-
-/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
-/// trailing whitespace, returning the output of `inner`.
-fn skip_space<'a, F, O>(inner: F) -> impl Parser<&'a str, O, ContextError>
-where
-    F: Parser<&'a str, O, ContextError>,
-{
-    combinator::delimited(ws_or_comment, inner, ws_or_comment)
-}
-
 fn parse_unit(i: &mut &str) -> PResult<LirType> {
     "()".map(|_| LirType::Unit).parse_next(i)
 }
 
 fn parse_bottom(i: &mut &str) -> PResult<LirType> {
     "!".map(|_| LirType::Bottom).parse_next(i)
-}
-
-fn expect(x: &'static str) -> StrContext {
-    StrContext::Expected(StrContextValue::Description(x))
 }
 
 fn parse_scalar_type(i: &mut &str) -> PResult<ScalarType> {
@@ -971,6 +940,8 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
+    use rura_core::types::ScalarType;
+    use rura_parsing::eol_comment;
 
     use super::*;
     #[test]
@@ -981,7 +952,7 @@ mod test {
     }
     #[test]
     fn test_skip_space() {
-        let input = r#"  
+        let input = r#"
           // Hello, world!
           /* sdad */
           213
@@ -1479,7 +1450,7 @@ mod test {
 
     #[test]
     fn test_parse_inductive_type_def() {
-        let mut test = r#"enum List<T> 
+        let mut test = r#"enum List<T>
             where @T: Foo
         { Nil, Cons(@T, List<@T>) }"#;
         let result = parse_inductive_type_def(&mut test).unwrap();
@@ -1523,7 +1494,7 @@ mod test {
 
     const MODULE: &str = r#"
 module test {
-    enum List<T> 
+    enum List<T>
         where @T: Foo
     { Nil, Cons(@T, List<@T>) }
     fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()> {
@@ -1535,7 +1506,7 @@ module test {
         return %1;
     }
     fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
-}    
+}
 "#;
     #[test]
     fn parse_module_test() {

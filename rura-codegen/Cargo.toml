@@ -3,18 +3,21 @@ name = "rura-codegen"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+winnow-simd = ["winnow/simd"]
 
 [dependencies]
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
-rura-core = { path = "../rura-core" }
 unicode-ident = "1.0.12"
-winnow = { version = "0.6.1" }
+winnow = { version = "0.6.2" }
 
-[features]
-winnow-simd = ["winnow/simd"]
+[dependencies.rura-core]
+path = "../rura-core"
+
+[dependencies.rura-parsing]
+path = "../rura-parsing"
 
 [dev-dependencies]
 prettyplease = "0.2.16"
-syn = "2.0.48"
+syn = "2.0.50"

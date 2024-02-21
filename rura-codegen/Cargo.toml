@@ -9,8 +9,7 @@ winnow-simd = ["winnow/simd"]
 [dependencies]
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
-unicode-ident = "1.0.12"
-winnow = { version = "0.6.2" }
+winnow = "0.6.2"
 
 [dependencies.rura-core]
 path = "../rura-core"

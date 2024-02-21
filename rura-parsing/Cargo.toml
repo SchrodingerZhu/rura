@@ -3,5 +3,6 @@ name = "rura-parsing"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies.winnow]
-version = "0.6.2"
+[dependencies]
+winnow = "0.6.2"
+unicode-ident = "1.0.12"

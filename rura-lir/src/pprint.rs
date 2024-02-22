@@ -241,7 +241,7 @@ impl Display for PrettyPrint<'_, ScalarConstant> {
             ScalarConstant::F32(x) => write!(f, "{} : f32", x),
             ScalarConstant::F64(x) => write!(f, "{} : f64", x),
             ScalarConstant::Bool(x) => write!(f, "{} : bool", x),
-            ScalarConstant::Char(x) => write!(f, "{} : char", *x as u32),
+            ScalarConstant::Char(x) => write!(f, "'{}' : char", x.escape_debug()),
         }
     }
 }

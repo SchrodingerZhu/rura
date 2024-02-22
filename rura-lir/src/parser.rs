@@ -5,8 +5,8 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    expect, identifier, keywords, optional_type_parameters, qualified_name, scalar_type,
-    skip_space, ws_or_comment, ScalarConstant,
+    expect, identifier, keywords, optional_type_parameters, parse_char, qualified_name,
+    scalar_type, skip_space, ws_or_comment, ScalarConstant,
 };
 
 use crate::lir::{
@@ -104,10 +104,8 @@ fn parse_operand(i: &mut &str) -> PResult<usize> {
 }
 
 fn parse_typed_char(i: &mut &str) -> PResult<ScalarConstant> {
-    (digit1, skip_space(":"), skip_space(keywords::CHAR))
-        .try_map(|(data, _, _)| data.parse::<u32>())
-        .verify_map(char::from_u32)
-        .map(ScalarConstant::Char)
+    (parse_char, skip_space(":"), skip_space(keywords::CHAR))
+        .map(|(c, _, _)| ScalarConstant::Char(c))
         .parse_next(i)
 }
 

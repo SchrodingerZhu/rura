@@ -850,7 +850,7 @@ mod test {
             enum List<T>
                 where @T: Foo
             { Nil, Cons(@T, List<@T>) }
-            fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()> {
+            fn test<T, U>(%1: i32, %2: f64) -> i32 where @T : std::TraitFoo + std::TraitBar<Head = ()>, @U : LoveYou {
                 %3 = constant 3 : i32;
                 return %3;
             }

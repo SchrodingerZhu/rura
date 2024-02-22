@@ -1,12 +1,13 @@
 use rura_core::{
     types::{LirType, TypeVar},
-    Member, QualifiedName,
+    Ident, Member, QualifiedName,
 };
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
-    IfThenElse, InductiveEliminator, Lir, MakeMutReceiver, ScalarConstant, UnaryOp,
+    ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
+    FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnaryOp,
 };
 
 pub struct PrettyPrint<'a, T> {
@@ -391,6 +392,141 @@ impl Display for PrettyPrint<'_, InductiveEliminator> {
     }
 }
 
+impl Display for PrettyPrint<'_, TraitExpr> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[repr(transparent)]
+        struct TraitParameter<'a>(&'a (Option<Ident>, LirType));
+        impl Display for TraitParameter<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                match &self.0 .0 {
+                    Some(ident) => write!(f, "{} = {}", ident, PrettyPrint::new(&self.0 .1)),
+                    None => write!(f, "{}", PrettyPrint::new(&self.0 .1)),
+                }
+            }
+        }
+        write!(f, "{}", self.target.name)?;
+        if !self.target.params.is_empty() {
+            write!(f, "<")?;
+            print_separated(f, self.target.params.iter().map(TraitParameter), ", ")?;
+            write!(f, ">")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for PrettyPrint<'_, Bound> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} : ", PrettyPrint::new(&self.target.target))?;
+        print_separated(f, self.target.bounds.iter().map(PrettyPrint::new), " + ")
+    }
+}
+
+impl Display for PrettyPrint<'_, FunctionPrototype> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[repr(transparent)]
+        struct Parameter<'a>(&'a (usize, LirType));
+        impl Display for Parameter<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}: {}", Var(self.0 .0), PrettyPrint::new(&self.0 .1))
+            }
+        }
+        write!(f, "fn {}", self.target.name)?;
+        if !self.target.type_params.is_empty() {
+            write!(f, "<")?;
+            print_separated(f, self.target.type_params.iter(), ", ")?;
+            write!(f, ">")?;
+        }
+        write!(f, "(")?;
+        print_separated(f, self.target.params.iter().map(Parameter), ", ")?;
+        write!(f, ") -> {}", PrettyPrint::new(&self.target.return_type))?;
+        if !self.target.bounds.is_empty() {
+            let indent = self.indent + 1;
+            let padding = "\t".repeat(indent);
+            write!(f, "\n{}where ", padding)?;
+            print_separated(
+                f,
+                self.target.bounds.iter().map(PrettyPrint::new),
+                &format!(",\n{padding}      "),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for PrettyPrint<'_, FunctionDef> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let padding = "\t".repeat(self.indent);
+        write!(f, "{padding}{}", self.same_level(&self.target.prototype))?;
+        write!(f, "\n{padding}{}", self.same_level(&self.target.body))
+    }
+}
+
+fn print_member_list(f: &mut Formatter<'_>, members: &[(Member, LirType)]) -> std::fmt::Result {
+    struct NamedMember<'a>(&'a Ident, &'a LirType);
+    impl Display for NamedMember<'_> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.0, PrettyPrint::new(self.1))
+        }
+    }
+    if members[0].0.is_named() {
+        write!(f, "{{")?;
+        print_separated(
+            f,
+            members.iter().map(|x| {
+                let Member::Named(ident) = &x.0 else {
+                    unreachable!("must be named member fields")
+                };
+                NamedMember(ident, &x.1)
+            }),
+            ", ",
+        )?;
+        write!(f, "}}")
+    } else {
+        write!(f, "(")?;
+        print_separated(f, members.iter().map(|x| PrettyPrint::new(&x.1)), ", ")?;
+        write!(f, ")")
+    }
+}
+
+impl Display for PrettyPrint<'_, CtorDef> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", "\t".repeat(self.indent), self.target.name)?;
+        if !self.target.params.is_empty() {
+            print_member_list(f, &self.target.params)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Display for PrettyPrint<'_, InductiveTypeDef> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let decl_padding = "\t".repeat(self.indent);
+        write!(f, "{}enum {}", decl_padding, self.target.name)?;
+        if !self.target.type_params.is_empty() {
+            write!(f, "<")?;
+            print_separated(f, self.target.type_params.iter(), ", ")?;
+            write!(f, ">")?;
+        }
+        if !self.target.type_params.is_empty() {
+            let padding = "\t".repeat(self.indent + 1);
+            write!(f, "\n{}where ", padding)?;
+            print_separated(
+                f,
+                self.target.bounds.iter().map(PrettyPrint::new),
+                &format!(",\n{}      ", padding),
+            )?;
+        }
+        writeln!(f, "\n{}{{", decl_padding)?;
+        print_separated(
+            f,
+            self.target.ctors.iter().map(|x| self.next_level(x)),
+            ",\n",
+        )?;
+        write!(f, "\n{decl_padding}}}")
+    }
+}
+
 impl Display for PrettyPrint<'_, Lir> {
     #[allow(unused)]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -442,12 +578,28 @@ impl Display for PrettyPrint<'_, Lir> {
     }
 }
 
+impl Display for PrettyPrint<'_, Module> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "module {} {{", self.target.name)?;
+        for typedef in self.target.inductive_types.iter() {
+            writeln!(f, "{}\n", self.next_level(typedef))?;
+        }
+        for function in self.target.functions.iter() {
+            writeln!(f, "{}\n", self.next_level(function))?;
+        }
+        for external in self.target.external_functions.iter() {
+            let padding = "\t".repeat(self.indent + 1);
+            writeln!(f, "{padding}{};", self.next_level(external))?;
+        }
+        write!(f, "}}")
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::parser::parse_module;
     use rura_core::types::ScalarType;
-    use rura_core::Ident;
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();
@@ -688,5 +840,35 @@ mod test {
             ]),
         };
         assert_lir_eq(&test);
+    }
+
+    #[test]
+    fn test_module_pprint() {
+        use std::io::Write;
+        const MODULE: &str = r#"
+        module test {
+            enum List<T>
+                where @T: Foo
+            { Nil, Cons(@T, List<@T>) }
+            fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()> {
+                %3 = constant 3 : i32;
+                return %3;
+            }
+            fn test2() -> i32 {
+                %1 = constant 3 : i32;
+                return %1;
+            }
+            fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
+        }
+        "#;
+        let mut input = MODULE;
+        let module = parse_module(&mut input).unwrap();
+        let mut buffer = Vec::new();
+        println!("{}", PrettyPrint::new(&module));
+        write!(&mut buffer, "{}", PrettyPrint::new(&module)).unwrap();
+        let string = String::from_utf8(buffer).unwrap();
+        let mut input2 = string.as_str();
+        let module2 = parse_module(&mut input2).unwrap();
+        assert_eq!(module, module2);
     }
 }

@@ -888,7 +888,6 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_core::types::ScalarType;
     use rura_parsing::eol_comment;
     use winnow::ascii::digit0;
 

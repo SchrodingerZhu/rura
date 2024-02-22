@@ -446,7 +446,7 @@ mod test {
     use super::*;
     use crate::parser::parse_module;
     use rura_core::types::ScalarType;
-    use rura_core::{Ident, QualifiedName};
+    use rura_core::Ident;
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();

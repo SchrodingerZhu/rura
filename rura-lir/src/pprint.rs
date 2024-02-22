@@ -1,4 +1,4 @@
-use rura_parsing::ScalarConstant;
+use rura_parsing::Constant;
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
@@ -223,25 +223,26 @@ impl Display for PrettyPrint<'_, ClosureCreation> {
     }
 }
 
-impl Display for PrettyPrint<'_, ScalarConstant> {
+impl Display for PrettyPrint<'_, Constant> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.target {
-            ScalarConstant::I8(x) => write!(f, "{} : i8", x),
-            ScalarConstant::I16(x) => write!(f, "{} : i16", x),
-            ScalarConstant::I32(x) => write!(f, "{} : i32", x),
-            ScalarConstant::I64(x) => write!(f, "{} : i64", x),
-            ScalarConstant::I128(x) => write!(f, "{} : i128", x),
-            ScalarConstant::ISize(x) => write!(f, "{} : isize", x),
-            ScalarConstant::U8(x) => write!(f, "{} : u8", x),
-            ScalarConstant::U16(x) => write!(f, "{} : u16", x),
-            ScalarConstant::U32(x) => write!(f, "{} : u32", x),
-            ScalarConstant::U64(x) => write!(f, "{} : u64", x),
-            ScalarConstant::U128(x) => write!(f, "{} : u128", x),
-            ScalarConstant::USize(x) => write!(f, "{} : usize", x),
-            ScalarConstant::F32(x) => write!(f, "{} : f32", x),
-            ScalarConstant::F64(x) => write!(f, "{} : f64", x),
-            ScalarConstant::Bool(x) => write!(f, "{} : bool", x),
-            ScalarConstant::Char(x) => write!(f, "'{}' : char", x.escape_debug()),
+            Constant::I8(x) => write!(f, "{} : i8", x),
+            Constant::I16(x) => write!(f, "{} : i16", x),
+            Constant::I32(x) => write!(f, "{} : i32", x),
+            Constant::I64(x) => write!(f, "{} : i64", x),
+            Constant::I128(x) => write!(f, "{} : i128", x),
+            Constant::ISize(x) => write!(f, "{} : isize", x),
+            Constant::U8(x) => write!(f, "{} : u8", x),
+            Constant::U16(x) => write!(f, "{} : u16", x),
+            Constant::U32(x) => write!(f, "{} : u32", x),
+            Constant::U64(x) => write!(f, "{} : u64", x),
+            Constant::U128(x) => write!(f, "{} : u128", x),
+            Constant::USize(x) => write!(f, "{} : usize", x),
+            Constant::F32(x) => write!(f, "{} : f32", x),
+            Constant::F64(x) => write!(f, "{} : f64", x),
+            Constant::Bool(x) => write!(f, "{} : bool", x),
+            Constant::Char(x) => write!(f, "{x:?} : char"),
+            Constant::Literal(x) => write!(f, "{x:?} : str"),
         }
     }
 }
@@ -553,7 +554,7 @@ impl Display for PrettyPrint<'_, Lir> {
             }
             Lir::UnaryOp(inner) => write!(f, "{}", self.same_level(&**inner)),
             Lir::IfThenElse(inner) => write!(f, "{}", self.same_level(&**inner)),
-            Lir::ConstantScalar { value, result } => {
+            Lir::Constant { value, result } => {
                 write!(f, "%{} = constant {};", result, PrettyPrint::new(&**value))
             }
             Lir::Fill { hole, value } => write!(f, "fill %{} <- %{};", hole, value),
@@ -695,16 +696,16 @@ mod test {
     }
     #[test]
     fn test_constant_char_pprint() {
-        let constant = Lir::ConstantScalar {
-            value: Box::new(ScalarConstant::Char('a')),
+        let constant = Lir::Constant {
+            value: Box::new(Constant::Char('a')),
             result: 0,
         };
         assert_lir_eq(&constant);
     }
     #[test]
     fn test_constant_bool_pprint() {
-        let constant = Lir::ConstantScalar {
-            value: Box::new(ScalarConstant::Bool(true)),
+        let constant = Lir::Constant {
+            value: Box::new(Constant::Bool(true)),
             result: 0,
         };
         assert_lir_eq(&constant);
@@ -797,8 +798,8 @@ mod test {
                     ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
                     style: EliminationStyle::Fixpoint(1),
                     body: Block(vec![
-                        Lir::ConstantScalar {
-                            value: Box::new(ScalarConstant::I32(3)),
+                        Lir::Constant {
+                            value: Box::new(Constant::I32(3)),
                             result: 2,
                         },
                         Lir::Return { value: 2 },
@@ -814,8 +815,8 @@ mod test {
                         ]),
                     },
                     body: Block(vec![
-                        Lir::ConstantScalar {
-                            value: Box::new(ScalarConstant::I32(4)),
+                        Lir::Constant {
+                            value: Box::new(Constant::I32(4)),
                             result: 6,
                         },
                         Lir::Return { value: 6 },
@@ -836,6 +837,7 @@ mod test {
             { Nil, Cons(@T, List<@T>) }
             fn test<T, U>(%1: i32, %2: f64) -> i32 where @T : std::TraitFoo + std::TraitBar<Head = ()>, @U : LoveYou {
                 %3 = constant 3 : i32;
+                %4 = constant "12\n" : str;
                 return %3;
             }
             fn test2(%0 : i32) -> i32 {

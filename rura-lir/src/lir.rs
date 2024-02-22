@@ -3,7 +3,7 @@ use std::hash::Hash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use rura_parsing::ScalarConstant;
+use rura_parsing::Constant;
 
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, Member, QualifiedName};
@@ -337,8 +337,8 @@ pub enum Lir {
     /// If-then-else
     IfThenElse(Box<IfThenElse>),
 
-    ConstantScalar {
-        value: Box<ScalarConstant>,
+    Constant {
+        value: Box<Constant>,
         result: usize,
     },
 
@@ -403,7 +403,7 @@ impl Lir {
             Lir::TupleElim { eliminator, .. } => box_iter!(@ eliminator.iter().copied()),
             Lir::UnaryOp(inner) => box_iter![inner.result],
             Lir::IfThenElse(..) => box_iter![],
-            Lir::ConstantScalar { result, .. } => box_iter![*result],
+            Lir::Constant { result, .. } => box_iter![*result],
             Lir::Fill { .. } => box_iter![],
             Lir::Curry { result, .. } => box_iter![*result],
         }
@@ -423,7 +423,7 @@ impl Lir {
             Lir::TupleElim { tuple, .. } => box_iter![*tuple],
             Lir::UnaryOp(inner) => box_iter![inner.operand],
             Lir::IfThenElse(inner) => box_iter![inner.condition],
-            Lir::ConstantScalar { .. } => box_iter![],
+            Lir::Constant { .. } => box_iter![],
             Lir::Fill { hole, value } => box_iter![*hole, *value],
             Lir::Curry { .. } => box_iter![],
         }

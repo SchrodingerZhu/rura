@@ -29,13 +29,14 @@ pub mod keywords {
     pub const F64: &str = "f64";
     pub const BOOL: &str = "bool";
     pub const CHAR: &str = "char";
+    pub const STR: &str = "str";
 
     pub const FALSE: &str = "false";
     pub const TRUE: &str = "true";
 }
 
 #[derive(Clone, Debug)]
-pub enum ScalarConstant {
+pub enum Constant {
     I8(i8),
     I16(i16),
     I32(i32),
@@ -52,9 +53,10 @@ pub enum ScalarConstant {
     F64(f64),
     Bool(bool),
     Char(char),
+    Literal(String),
 }
 
-impl PartialEq for ScalarConstant {
+impl PartialEq for Constant {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::I8(a), Self::I8(b)) => a == b,
@@ -73,14 +75,15 @@ impl PartialEq for ScalarConstant {
             (Self::F64(a), Self::F64(b)) => a.to_bits() == b.to_bits(),
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Char(a), Self::Char(b)) => a == b,
+            (Self::Literal(a), Self::Literal(b)) => a == b,
             _ => false,
         }
     }
 }
 
-impl Eq for ScalarConstant {}
+impl Eq for Constant {}
 
-impl Hash for ScalarConstant {
+impl Hash for Constant {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
         match self {
@@ -100,6 +103,7 @@ impl Hash for ScalarConstant {
             Self::F64(a) => a.to_bits().hash(state),
             Self::Bool(a) => a.hash(state),
             Self::Char(a) => a.hash(state),
+            Self::Literal(a) => a.hash(state),
         }
     }
 }
@@ -234,27 +238,27 @@ pub fn scalar_type(i: &mut &str) -> PResult<ScalarType> {
 
 // TODO: Parse chars.
 
-pub fn boolean(i: &mut &str) -> PResult<ScalarConstant> {
+pub fn boolean(i: &mut &str) -> PResult<Constant> {
     alpha1
         .try_map(|s: &str| s.parse::<bool>())
-        .map(ScalarConstant::Bool)
+        .map(Constant::Bool)
         .parse_next(i)
 }
 
 macro_rules! number {
     (float $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<ScalarConstant> {
-            float.map(|n| ScalarConstant::$ctor(n)).parse_next(i)
+        pub fn $name(i: &mut &str) -> PResult<Constant> {
+            float.map(|n| Constant::$ctor(n)).parse_next(i)
         }
     };
     (signed $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<ScalarConstant> {
-            dec_int.map(|n| ScalarConstant::$ctor(n)).parse_next(i)
+        pub fn $name(i: &mut &str) -> PResult<Constant> {
+            dec_int.map(|n| Constant::$ctor(n)).parse_next(i)
         }
     };
     (unsigned $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<ScalarConstant> {
-            dec_uint.map(|n| ScalarConstant::$ctor(n)).parse_next(i)
+        pub fn $name(i: &mut &str) -> PResult<Constant> {
+            dec_uint.map(|n| Constant::$ctor(n)).parse_next(i)
         }
     };
 }

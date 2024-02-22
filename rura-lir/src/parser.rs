@@ -5,8 +5,8 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    expect, identifier, keywords, optional_type_parameters, parse_char, qualified_name,
-    scalar_type, skip_space, ws_or_comment, ScalarConstant,
+    expect, identifier, keywords, optional_type_parameters, parse_char, parse_string,
+    qualified_name, scalar_type, skip_space, ws_or_comment, Constant,
 };
 
 use crate::lir::{
@@ -103,15 +103,21 @@ fn parse_operand(i: &mut &str) -> PResult<usize> {
         .parse_next(i)
 }
 
-fn parse_typed_char(i: &mut &str) -> PResult<ScalarConstant> {
+fn parse_typed_char(i: &mut &str) -> PResult<Constant> {
     (parse_char, skip_space(":"), skip_space(keywords::CHAR))
-        .map(|(c, _, _)| ScalarConstant::Char(c))
+        .map(|(c, _, _)| Constant::Char(c))
+        .parse_next(i)
+}
+
+fn parse_typed_literal(i: &mut &str) -> PResult<Constant> {
+    (parse_string, skip_space(":"), skip_space(keywords::STR))
+        .map(|(c, _, _)| Constant::Literal(c))
         .parse_next(i)
 }
 
 macro_rules! parse_typed_value {
     ($name:ident $parser:ident $kw:ident) => {
-        fn $name(i: &mut &str) -> PResult<ScalarConstant> {
+        fn $name(i: &mut &str) -> PResult<Constant> {
             (
                 rura_parsing::$parser,
                 skip_space(":"),
@@ -157,6 +163,7 @@ fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
         parse_typed_u64,
         parse_typed_u128,
         parse_typed_usize,
+        parse_typed_literal,
     ));
     (
         parse_operand,
@@ -165,7 +172,7 @@ fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
         skip_space(inner).context(expect("typed constant value")),
         ";",
     )
-        .map(|(op, _, _, value, _)| Lir::ConstantScalar {
+        .map(|(op, _, _, value, _)| Lir::Constant {
             value: Box::new(value),
             result: op,
         })
@@ -972,9 +979,9 @@ mod test {
         let result = parse_constant_instr(&mut input).unwrap();
         assert_eq!(
             result,
-            Lir::ConstantScalar {
+            Lir::Constant {
                 #[allow(clippy::approx_constant)]
-                value: Box::new(ScalarConstant::F64(3.14)),
+                value: Box::new(Constant::F64(3.14)),
                 result: 1
             }
         );
@@ -986,8 +993,8 @@ mod test {
         let result = parse_constant_instr(&mut input).unwrap();
         assert_eq!(
             result,
-            Lir::ConstantScalar {
-                value: Box::new(ScalarConstant::USize(3)),
+            Lir::Constant {
+                value: Box::new(Constant::USize(3)),
                 result: 1
             }
         );
@@ -1082,8 +1089,8 @@ mod test {
                     (3, LirType::Scalar(ScalarType::F64),)
                 ]),
                 body: Block(vec![
-                    Lir::ConstantScalar {
-                        value: Box::new(ScalarConstant::I32(3)),
+                    Lir::Constant {
+                        value: Box::new(Constant::I32(3)),
                         result: 4
                     },
                     Lir::Return { value: 4 },
@@ -1106,16 +1113,16 @@ mod test {
         assert_eq!(
             result,
             Block(vec![
-                Lir::ConstantScalar {
-                    value: Box::new(ScalarConstant::Bool(true)),
+                Lir::Constant {
+                    value: Box::new(Constant::Bool(true)),
                     result: 1
                 },
-                Lir::ConstantScalar {
-                    value: Box::new(ScalarConstant::I32(3)),
+                Lir::Constant {
+                    value: Box::new(Constant::I32(3)),
                     result: 2
                 },
-                Lir::ConstantScalar {
-                    value: Box::new(ScalarConstant::I32(4)),
+                Lir::Constant {
+                    value: Box::new(Constant::I32(4)),
                     result: 3
                 },
                 Lir::IfThenElse(Box::new(IfThenElse {
@@ -1198,8 +1205,8 @@ mod test {
                         ctor: QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
                         style: EliminationStyle::Fixpoint(1),
                         body: Block(vec![
-                            Lir::ConstantScalar {
-                                value: Box::new(ScalarConstant::I32(3)),
+                            Lir::Constant {
+                                value: Box::new(Constant::I32(3)),
                                 result: 2
                             },
                             Lir::Return { value: 2 }
@@ -1215,8 +1222,8 @@ mod test {
                             ])
                         },
                         body: Block(vec![
-                            Lir::ConstantScalar {
-                                value: Box::new(ScalarConstant::I32(4)),
+                            Lir::Constant {
+                                value: Box::new(Constant::I32(4)),
                                 result: 6
                             },
                             Lir::Return { value: 6 }

@@ -7,7 +7,7 @@ use crate::lir::{
     InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
-use crate::{Ident, Member, QualifiedName};
+use crate::{fmt_separated, Ident, Member, QualifiedName};
 
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
@@ -173,21 +173,6 @@ impl Display for PrettyPrint<'_, BinaryOp> {
     }
 }
 
-fn print_separated<D: Display, I: ExactSizeIterator<Item = D>>(
-    f: &mut Formatter<'_>,
-    iter: I,
-    sep: &str,
-) -> std::fmt::Result {
-    let length = iter.len();
-    for (idx, item) in iter.enumerate() {
-        write!(f, "{}", item)?;
-        if idx + 1 != length {
-            write!(f, "{}", sep)?;
-        }
-    }
-    Ok(())
-}
-
 #[repr(transparent)]
 struct Var(usize);
 
@@ -204,7 +189,7 @@ impl Display for PrettyPrint<'_, FunctionCall> {
             "%{} = call {} (",
             self.target.result, self.target.function
         )?;
-        print_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
+        fmt_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
         write!(f, ");")
     }
 }
@@ -221,7 +206,7 @@ impl Display for PrettyPrint<'_, ClosureCreation> {
             }
         }
         write!(f, "%{} = (", self.target.result)?;
-        print_separated(
+        fmt_separated(
             f,
             self.target
                 .params
@@ -297,7 +282,7 @@ impl Display for PrettyPrint<'_, CtorCall> {
         write!(f, " {}", self.target.type_name)?;
         if !self.target.type_params.is_empty() {
             write!(f, "<")?;
-            print_separated(
+            fmt_separated(
                 f,
                 self.target.type_params.iter().map(PrettyPrint::new),
                 ", ",
@@ -306,7 +291,7 @@ impl Display for PrettyPrint<'_, CtorCall> {
         }
         write!(f, " @ {} (", self.target.ctor)?;
         if !self.target.args.is_empty() {
-            print_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
+            fmt_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
         }
         write!(f, ")")?;
         if self.target.unique_rc {
@@ -344,11 +329,11 @@ impl Display for PrettyPrint<'_, MakeMutReceiver> {
 fn print_binding_list(f: &mut Formatter<'_>, bindings: &[(Member, usize)]) -> std::fmt::Result {
     if bindings[0].0.is_named() {
         write!(f, "{{")?;
-        print_separated(f, bindings.iter().map(Binding), ", ")?;
+        fmt_separated(f, bindings.iter().map(Binding), ", ")?;
         write!(f, "}}")
     } else {
         write!(f, "(")?;
-        print_separated(f, bindings.iter().map(Binding), ", ")?;
+        fmt_separated(f, bindings.iter().map(Binding), ", ")?;
         write!(f, ")")
     }
 }
@@ -367,11 +352,11 @@ fn print_match_arm_header(
             write!(f, "[mutation] {}", ctor)?;
             if bindings[0].target.is_named() {
                 write!(f, "{{")?;
-                print_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
+                fmt_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
                 write!(f, "}}")
             } else {
                 write!(f, "(")?;
-                print_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
+                fmt_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
                 write!(f, ")")
             }
         }
@@ -406,7 +391,7 @@ impl Display for PrettyPrint<'_, TraitExpr> {
         write!(f, "{}", self.target.name)?;
         if !self.target.params.is_empty() {
             write!(f, "<")?;
-            print_separated(f, self.target.params.iter().map(TraitParameter), ", ")?;
+            fmt_separated(f, self.target.params.iter().map(TraitParameter), ", ")?;
             write!(f, ">")?;
         }
         Ok(())
@@ -416,7 +401,7 @@ impl Display for PrettyPrint<'_, TraitExpr> {
 impl Display for PrettyPrint<'_, Bound> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} : ", PrettyPrint::new(&self.target.target))?;
-        print_separated(f, self.target.bounds.iter().map(PrettyPrint::new), " + ")
+        fmt_separated(f, self.target.bounds.iter().map(PrettyPrint::new), " + ")
     }
 }
 
@@ -432,17 +417,17 @@ impl Display for PrettyPrint<'_, FunctionPrototype> {
         write!(f, "fn {}", self.target.name)?;
         if !self.target.type_params.is_empty() {
             write!(f, "<")?;
-            print_separated(f, self.target.type_params.iter(), ", ")?;
+            fmt_separated(f, self.target.type_params.iter(), ", ")?;
             write!(f, ">")?;
         }
         write!(f, "(")?;
-        print_separated(f, self.target.params.iter().map(Parameter), ", ")?;
+        fmt_separated(f, self.target.params.iter().map(Parameter), ", ")?;
         write!(f, ") -> {}", PrettyPrint::new(&self.target.return_type))?;
         if !self.target.bounds.is_empty() {
             let indent = self.indent + 1;
             let padding = "\t".repeat(indent);
             write!(f, "\n{}where ", padding)?;
-            print_separated(
+            fmt_separated(
                 f,
                 self.target.bounds.iter().map(PrettyPrint::new),
                 &format!(",\n{padding}      "),
@@ -469,7 +454,7 @@ fn print_member_list(f: &mut Formatter<'_>, members: &[(Member, LirType)]) -> st
     }
     if members[0].0.is_named() {
         write!(f, "{{")?;
-        print_separated(
+        fmt_separated(
             f,
             members.iter().map(|x| {
                 let Member::Named(ident) = &x.0 else {
@@ -482,7 +467,7 @@ fn print_member_list(f: &mut Formatter<'_>, members: &[(Member, LirType)]) -> st
         write!(f, "}}")
     } else {
         write!(f, "(")?;
-        print_separated(f, members.iter().map(|x| PrettyPrint::new(&x.1)), ", ")?;
+        fmt_separated(f, members.iter().map(|x| PrettyPrint::new(&x.1)), ", ")?;
         write!(f, ")")
     }
 }
@@ -504,20 +489,20 @@ impl Display for PrettyPrint<'_, InductiveTypeDef> {
         write!(f, "{}enum {}", decl_padding, self.target.name)?;
         if !self.target.type_params.is_empty() {
             write!(f, "<")?;
-            print_separated(f, self.target.type_params.iter(), ", ")?;
+            fmt_separated(f, self.target.type_params.iter(), ", ")?;
             write!(f, ">")?;
         }
         if !self.target.type_params.is_empty() {
             let padding = "\t".repeat(self.indent + 1);
             write!(f, "\n{}where ", padding)?;
-            print_separated(
+            fmt_separated(
                 f,
                 self.target.bounds.iter().map(PrettyPrint::new),
                 &format!(",\n{}      ", padding),
             )?;
         }
         writeln!(f, "\n{}{{", decl_padding)?;
-        print_separated(
+        fmt_separated(
             f,
             self.target.ctors.iter().map(|x| self.next_level(x)),
             ",\n",
@@ -558,12 +543,12 @@ impl Display for PrettyPrint<'_, Lir> {
             Lir::Return { value } => write!(f, "return %{};", value),
             Lir::TupleIntro { elements, result } => {
                 write!(f, "%{} = (", result)?;
-                print_separated(f, elements.iter().copied().map(Var), ", ")?;
+                fmt_separated(f, elements.iter().copied().map(Var), ", ")?;
                 write!(f, ");")
             }
             Lir::TupleElim { tuple, eliminator } => {
                 write!(f, "(")?;
-                print_separated(f, eliminator.iter().copied().map(Var), ", ")?;
+                fmt_separated(f, eliminator.iter().copied().map(Var), ", ")?;
                 write!(f, ") = %{};", tuple)
             }
             Lir::UnaryOp(inner) => write!(f, "{}", self.same_level(&**inner)),

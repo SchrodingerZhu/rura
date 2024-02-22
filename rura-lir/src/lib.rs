@@ -8,16 +8,20 @@ pub mod pprint;
 // pub mod shape;
 pub mod types;
 
-fn fmt_separated<T: Display, P: Display>(
+fn fmt_separated<T: Display, P: Display, I>(
     f: &mut Formatter<'_>,
-    args: &[T],
+    args: I,
     pat: P,
-) -> std::fmt::Result {
-    for (i, arg) in args.iter().enumerate() {
-        if i != 0 {
-            write!(f, "{pat}")?;
-        }
+) -> std::fmt::Result
+where
+    I: ExactSizeIterator<Item = T>,
+{
+    let length = args.len();
+    for (i, arg) in args.enumerate() {
         write!(f, "{}", arg)?;
+        if i + 1 < length {
+            write!(f, "{}", pat)?;
+        }
     }
     Ok(())
 }
@@ -83,6 +87,6 @@ impl From<Box<[Ident]>> for QualifiedName {
 
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        fmt_separated(f, &self.0, "::")
+        fmt_separated(f, self.0.iter(), "::")
     }
 }

@@ -1,5 +1,9 @@
 use std::{fmt::Display, fmt::Formatter};
 
+pub mod lir;
+pub mod parser;
+pub mod pass;
+pub mod pprint;
 pub mod shape;
 pub mod types;
 

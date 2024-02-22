@@ -1,8 +1,7 @@
-use crate::{
-    types::{InductiveType, RuraType, ScalarType, TypeVar},
-    Ident,
-};
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
+
+use crate::types::{InductiveType, RuraType, ScalarType, TypeVar};
+use crate::Ident;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Layout(std::alloc::Layout);
@@ -241,7 +240,7 @@ pub fn compare_shapes(a: &Shape, b: &Shape) -> ShapeSimilarity {
 mod test {
     use super::*;
     use crate::types::*;
-    use crate::*;
+    use crate::QualifiedName;
 
     #[test]
     fn test_try_from_rura_type_for_shape() {

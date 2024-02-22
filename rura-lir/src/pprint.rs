@@ -1,7 +1,3 @@
-use rura_core::{
-    types::{LirType, TypeVar},
-    Ident, Member, QualifiedName,
-};
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
@@ -9,6 +5,8 @@ use crate::lir::{
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
     InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnaryOp,
 };
+use crate::types::{LirType, TypeVar};
+use crate::{Ident, Member, QualifiedName};
 
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
@@ -599,7 +597,7 @@ impl Display for PrettyPrint<'_, Module> {
 mod test {
     use super::*;
     use crate::parser::parse_module;
-    use rura_core::types::ScalarType;
+    use crate::types::ScalarType;
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();

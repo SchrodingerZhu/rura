@@ -1,5 +1,6 @@
-use crate::{fmt_separated, Ident, QualifiedName};
 use std::{fmt::Display, fmt::Formatter};
+
+use crate::{fmt_separated, Ident, QualifiedName};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ScalarType {

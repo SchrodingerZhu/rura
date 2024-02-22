@@ -24,7 +24,7 @@ pub trait DiagnosticPass: Pass {
 pub struct UndefinedVariablePass;
 
 impl Pass for UndefinedVariablePass {
-    const IDENTIFER: &'static str = "undefined-variable";
+    const IDENTIFIER: &'static str = "undefined-variable";
     const TYPE: PassType = PassType::Diagnostic;
 }
 

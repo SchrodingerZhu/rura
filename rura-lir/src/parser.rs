@@ -3,14 +3,14 @@ use winnow::combinator::{alt, dispatch, empty, fail, opt, preceded, repeat, sepa
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
-use rura_core::types::{LirType, ScalarType};
-use rura_core::Member;
-use rura_core::{types::TypeVar, Ident, QualifiedName};
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
     expect, identifier, keywords, optional_type_parameters, qualified_name, skip_space,
     ws_or_comment,
 };
+
+use crate::types::{LirType, ScalarType, TypeVar};
+use crate::{Ident, Member, QualifiedName};
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,

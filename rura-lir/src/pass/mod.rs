@@ -1,7 +1,7 @@
 pub mod diagnostic;
 
 pub enum PassType {
-    // Generate diagnotic information
+    // Generate diagnostic information
     Diagnostic,
     // Attach new information to the LIR module
     Analysis,
@@ -10,6 +10,6 @@ pub enum PassType {
 }
 
 pub trait Pass {
-    const IDENTIFER: &'static str;
+    const IDENTIFIER: &'static str;
     const TYPE: PassType;
 }

@@ -2,10 +2,10 @@ use std::hash::Hash;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use rura_core::{
-    types::{LirType, TypeVar},
-    Ident, Member, QualifiedName,
-};
+
+use crate::types::{LirType, TypeVar};
+use crate::{Ident, Member, QualifiedName};
+
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
  */
@@ -431,7 +431,7 @@ fn ident(id: &Ident) -> proc_macro2::Ident {
     proc_macro2::Ident::new(id, proc_macro2::Span::call_site())
 }
 
-fn qualified_name(name: &QualifiedName) -> proc_macro2::TokenStream {
+fn qualified_name(name: &QualifiedName) -> TokenStream {
     let name = name.iter().map(ident);
     quote! {
         #(::#name)*
@@ -439,7 +439,7 @@ fn qualified_name(name: &QualifiedName) -> proc_macro2::TokenStream {
 }
 
 impl Lir {
-    pub fn lower_to_rust(&self) -> proc_macro2::TokenStream {
+    pub fn lower_to_rust(&self) -> TokenStream {
         match self {
             Lir::Drop { value, token } => {
                 let value = variable(*value);

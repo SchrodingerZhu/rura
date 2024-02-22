@@ -1,5 +1,5 @@
 [package]
-name = "rura-codegen"
+name = "rura-lir"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,9 +11,7 @@ winnow-debug = ["winnow/debug"]
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
 winnow = "0.6.2"
-
-[dependencies.rura-core]
-path = "../rura-core"
+thiserror = "1.0.57"
 
 [dependencies.rura-parsing]
 path = "../rura-parsing"

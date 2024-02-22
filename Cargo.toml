@@ -1,10 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "rura-core",
     "rura-runtime",
     "rura-internal-macros",
-    "rura-codegen",
+    "rura-lir",
     "rura-grammar",
     "rura-typing",
     "rura-parsing"

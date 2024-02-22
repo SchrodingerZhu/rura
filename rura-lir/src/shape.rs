@@ -2,6 +2,7 @@ use rura_parsing::PrimitiveType;
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
 use crate::lir::InductiveTypeDef;
+use crate::types::LirType;
 use crate::{types::TypeVar, Ident};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -33,6 +34,9 @@ impl Layout {
     }
 }
 
+/// A shape of a type decides the memory layout of the type
+/// Tuple and Composite are separated since Tuple is a special case where
+/// the elements are stored in an unboxed way
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Shape {
     Closed(Layout),
@@ -44,23 +48,40 @@ pub enum Shape {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShapeError {
-    #[error("Inductive type has unsolved type parameters")]
-    UnresolvedType,
+    #[error("Hole type is not materializable")]
+    HoleType,
     #[error("Bottom type does not have a shape")]
     BottomType,
+    #[error("Ref type is not materializable")]
+    RefType,
+    #[error("Inductive type is not fully applied")]
+    IncompleteInductive,
 }
 
-fn get_shape_inductive<'a, 'b: 'a>(
+pub fn get_inductive_shape<'a, 'b: 'a, I: ExactSizeIterator<Item = &'b LirType>>(
     inductive: &'b InductiveTypeDef,
-    context: &'a mut HashMap<&'b Ident, Shape>,
+    type_params: I,
+    known_type_variable: &'_ HashMap<&'a Ident, &'b LirType>,
 ) -> Result<Shape, ShapeError> {
+    if inductive.type_params.len() != type_params.len() {
+        return Err(ShapeError::IncompleteInductive);
+    }
+
+    let known_type_variable = inductive.type_params.iter().zip(type_params).fold(
+        known_type_variable.clone(),
+        |mut acc, (param, ty)| {
+            acc.insert(param, ty);
+            acc
+        },
+    );
+
     let mut shapes = inductive
         .ctors
         .iter()
         .map(|c| {
             c.params
                 .iter()
-                .map(|t| get_shape(t, context))
+                .map(|(_, ty)| get_value_shape(ty, &known_type_variable))
                 .collect::<Result<Vec<_>, _>>()
         })
         .map(|x| x.map(Vec::into_boxed_slice))
@@ -81,12 +102,12 @@ fn get_shape_inductive<'a, 'b: 'a>(
     Ok(Shape::Alternative(shapes.into_boxed_slice()))
 }
 
-fn get_shape<'a, 'b: 'a>(
-    rura_type: &'b RuraType,
-    context: &'a mut HashMap<&'b Ident, Shape>,
+pub fn get_value_shape<'a, 'b: 'a>(
+    ty: &'b LirType,
+    known_type_variable: &'_ HashMap<&'a Ident, &'b LirType>,
 ) -> Result<Shape, ShapeError> {
-    match rura_type {
-        RuraType::Scalar(scalar) => match scalar {
+    match ty {
+        LirType::Primitive(primitive) => match primitive {
             PrimitiveType::I8 => Ok(Shape::Closed(Layout::new::<i8>())),
             PrimitiveType::I16 => Ok(Shape::Closed(Layout::new::<i16>())),
             PrimitiveType::I32 => Ok(Shape::Closed(Layout::new::<i32>())),
@@ -103,68 +124,35 @@ fn get_shape<'a, 'b: 'a>(
             PrimitiveType::F64 => Ok(Shape::Closed(Layout::new::<f64>())),
             PrimitiveType::Bool => Ok(Shape::Closed(Layout::new::<bool>())),
             PrimitiveType::Char => Ok(Shape::Closed(Layout::new::<char>())),
+            PrimitiveType::Str => Ok(Shape::Closed(Layout::new::<&'static str>())),
         },
-        RuraType::Unit => Ok(Shape::Closed(Layout::new::<()>())),
-        RuraType::Bottom => Err(ShapeError::BottomType),
-        RuraType::Inductive(inductive) => {
-            if !inductive.type_params.is_empty() {
-                return Err(ShapeError::UnresolvedType);
-            }
-            get_shape_inductive(inductive.as_ref(), context)
-        }
-        RuraType::Closure(x) => {
-            if x.args.len() > 16 {
-                Ok(Shape::Closed(Layout::new::<Rc<()>>()))
-            } else {
-                Ok(Shape::Closed(Layout::new::<Rc<dyn Any>>()))
-            }
-        }
-        RuraType::Tuple(tuple) => {
+        LirType::Unit => Ok(Shape::Closed(Layout::new::<()>())),
+        LirType::Bottom => Err(ShapeError::BottomType),
+        // value of a object is always a pointer
+        LirType::Object(..) => Ok(Shape::Closed(Layout::new::<Rc<Option<usize>>>())),
+        LirType::Closure { .. } => Ok(Shape::Closed(Layout::new::<Rc<dyn Any>>())),
+        LirType::Tuple(tuple) => {
             let shapes = tuple
                 .iter()
-                .map(Shape::try_from)
+                .map(|x| get_value_shape(x, known_type_variable))
                 .collect::<Result<Vec<_>, _>>()?;
             if shapes.len() == 1 {
                 return Ok(shapes.into_iter().next().unwrap());
             }
             Ok(Shape::Tuple(shapes.into_boxed_slice()))
         }
-        RuraType::TypeVar(var) => match var.as_ref() {
+        LirType::TypeVar(var) => match var {
             TypeVar::Plain(ident) => {
-                if let Some(t) = context.get(ident).cloned() {
-                    Ok(t)
+                if let Some(t) = known_type_variable.get(ident).copied() {
+                    Ok(get_value_shape(t, known_type_variable)?)
                 } else {
-                    Ok(Shape::OpenVar(var.clone()))
+                    Ok(Shape::OpenVar(Box::new(var.clone())))
                 }
             }
-            _ => Ok(Shape::OpenVar(var.clone())),
+            _ => Ok(Shape::OpenVar(Box::new(var.clone()))),
         },
-        RuraType::TypeRef(_, _) => Ok(Shape::Closed(Layout::new::<Rc<()>>())),
-        RuraType::ResolvedInductive(inductive, args) => {
-            let mut changelog = Vec::new();
-            for (param, arg) in inductive.type_params.iter().zip(args.iter()) {
-                let shape = get_shape(arg, context)?;
-                changelog.push((param, context.insert(param, shape)));
-            }
-            let shape = get_shape_inductive(inductive.as_ref(), context);
-            for (param, old) in changelog {
-                if let Some(old) = old {
-                    context.insert(param, old);
-                } else {
-                    context.remove(param);
-                }
-            }
-            shape
-        }
-    }
-}
-
-impl TryFrom<&'_ RuraType> for Shape {
-    type Error = ShapeError;
-
-    fn try_from(value: &'_ RuraType) -> Result<Self, Self::Error> {
-        let mut context = HashMap::new();
-        get_shape(value, &mut context)
+        LirType::Hole(..) => Err(ShapeError::HoleType),
+        LirType::Ref(..) => Err(ShapeError::RefType),
     }
 }
 
@@ -239,17 +227,21 @@ pub fn compare_shapes(a: &Shape, b: &Shape) -> ShapeSimilarity {
 
 #[cfg(test)]
 mod test {
+
     use super::*;
+    use crate::lir::CtorDef;
+    use crate::pprint::PrettyPrint;
     use crate::types::*;
+    use crate::Member;
     use crate::QualifiedName;
 
     #[test]
     fn test_try_from_rura_type_for_shape() {
-        let rura_type = RuraType::Tuple(Box::new([
-            RuraType::Scalar(PrimitiveType::I32),
-            RuraType::Scalar(PrimitiveType::F64),
+        let ty: LirType = LirType::Tuple(Box::new([
+            LirType::Primitive(PrimitiveType::I32),
+            LirType::Primitive(PrimitiveType::F64),
         ]));
-        let shape = Shape::try_from(&rura_type).unwrap();
+        let shape = get_value_shape(&ty, &HashMap::new()).unwrap();
         assert_eq!(
             shape,
             Shape::Tuple(Box::new([
@@ -261,30 +253,35 @@ mod test {
 
     #[test]
     fn test_rura_type_usize_object_reusable() {
-        let box_type = InductiveType {
-            qualified_name: QualifiedName(Box::new(["Box".into()])),
+        let ind_type = InductiveTypeDef {
+            name: QualifiedName(Box::new(["Box".into()])),
             type_params: Box::new([Ident("T".into())]),
-            constructors: Box::new([Constructor {
+            bounds: [].into(),
+            ctors: Box::new([CtorDef {
                 name: Ident("Box".into()),
-                args: Box::new([RuraType::TypeVar(Box::new(TypeVar::Plain(Ident(
-                    "T".into(),
-                ))))]),
+                params: Box::new([(
+                    Member::Index(0),
+                    LirType::TypeVar(TypeVar::Plain(Ident("T".into()))),
+                )]),
             }]),
         };
-        let rura_type = RuraType::ResolvedInductive(
-            Box::new(box_type.clone()),
-            Box::new([RuraType::Scalar(PrimitiveType::USize)]),
+        let shape_x = get_inductive_shape(
+            &ind_type,
+            [&LirType::Primitive(PrimitiveType::USize)].into_iter(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let rura_type = LirType::Object(
+            QualifiedName(Box::new(["Box".into()])),
+            Box::new([LirType::Primitive(PrimitiveType::USize)]),
         );
-        let shape_x = Shape::try_from(&rura_type).unwrap();
-        let rura_type = RuraType::ResolvedInductive(
-            Box::new(box_type),
-            Box::new([RuraType::TypeRef(
-                QualifiedName(Box::new(["Box".into()])),
-                Box::new([RuraType::Scalar(PrimitiveType::USize)]),
-            )]),
+        let shape_y =
+            get_inductive_shape(&ind_type, [&rura_type].into_iter(), &HashMap::new()).unwrap();
+        println!(
+            "shape: {:?}, type: {}",
+            shape_y,
+            PrettyPrint::new(&rura_type)
         );
-        let shape_y = Shape::try_from(&rura_type).unwrap();
-        println!("shape: {:?}, type: {}", shape_y, rura_type);
         assert_eq!(shape_x, shape_y);
     }
 }

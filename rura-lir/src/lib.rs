@@ -4,8 +4,7 @@ pub mod lir;
 pub mod parser;
 pub mod pass;
 pub mod pprint;
-// TODO: rework shape to make it work with lir
-// pub mod shape;
+pub mod shape;
 pub mod types;
 
 fn fmt_separated<T: Display, P: Display, I>(

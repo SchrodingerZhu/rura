@@ -56,7 +56,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     alt((
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
-        scalar_type.map(LirType::Scalar),
+        scalar_type.map(LirType::Primitive),
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
@@ -922,8 +922,8 @@ mod test {
         assert_eq!(
             result,
             Ok(LirType::Tuple(Box::new([
-                LirType::Scalar(PrimitiveType::I32),
-                LirType::Scalar(PrimitiveType::F64)
+                LirType::Primitive(PrimitiveType::I32),
+                LirType::Primitive(PrimitiveType::F64)
             ])))
         );
     }
@@ -950,8 +950,8 @@ mod test {
             Ok(LirType::Object(
                 QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Vec")])),
                 Box::new([
-                    LirType::Scalar(PrimitiveType::I32),
-                    LirType::Scalar(PrimitiveType::F64)
+                    LirType::Primitive(PrimitiveType::I32),
+                    LirType::Primitive(PrimitiveType::F64)
                 ])
             ))
         );
@@ -965,10 +965,10 @@ mod test {
             result,
             Ok(LirType::Closure(
                 Box::new([
-                    LirType::Scalar(PrimitiveType::I32),
-                    LirType::Scalar(PrimitiveType::F64)
+                    LirType::Primitive(PrimitiveType::I32),
+                    LirType::Primitive(PrimitiveType::F64)
                 ]),
-                Box::new(LirType::Scalar(PrimitiveType::I32))
+                Box::new(LirType::Primitive(PrimitiveType::I32))
             ))
         );
     }
@@ -1085,8 +1085,8 @@ mod test {
             Lir::Closure(Box::new(ClosureCreation {
                 result: 1,
                 params: Box::new([
-                    (2, LirType::Scalar(PrimitiveType::I32),),
-                    (3, LirType::Scalar(PrimitiveType::F64),)
+                    (2, LirType::Primitive(PrimitiveType::I32),),
+                    (3, LirType::Primitive(PrimitiveType::F64),)
                 ]),
                 body: Block(vec![
                     Lir::Constant {
@@ -1095,7 +1095,7 @@ mod test {
                     },
                     Lir::Return { value: 4 },
                 ]),
-                return_type: LirType::Scalar(PrimitiveType::I32)
+                return_type: LirType::Primitive(PrimitiveType::I32)
             }))
         );
     }
@@ -1343,10 +1343,10 @@ mod test {
                 name: QualifiedName::new(Box::new([Ident::new("test")])),
                 type_params: Box::new([Ident::new("T")]),
                 params: Box::new([
-                    (1, LirType::Scalar(PrimitiveType::I32)),
-                    (2, LirType::Scalar(PrimitiveType::F64))
+                    (1, LirType::Primitive(PrimitiveType::I32)),
+                    (2, LirType::Primitive(PrimitiveType::F64))
                 ]),
-                return_type: LirType::Scalar(PrimitiveType::I32),
+                return_type: LirType::Primitive(PrimitiveType::I32),
                 bounds: Box::new([Bound {
                     target: TypeVar::Plain(Ident::new("T")),
                     bounds: Box::new([

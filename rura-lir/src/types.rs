@@ -27,7 +27,7 @@ pub enum LirType {
     /// fn (A, B) -> C
     Closure(Box<[Self]>, Box<Self>),
     /// usize, i32, etc
-    Scalar(PrimitiveType),
+    Primitive(PrimitiveType),
     /// ()
     Unit,
     /// !

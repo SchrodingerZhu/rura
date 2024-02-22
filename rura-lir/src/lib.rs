@@ -1,4 +1,9 @@
-use std::{fmt::Display, fmt::Formatter};
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    hash::Hash,
+};
 
 pub mod lir;
 pub mod parser;
@@ -87,5 +92,35 @@ impl From<Box<[Ident]>> for QualifiedName {
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         fmt_separated(f, self.0.iter(), "::")
+    }
+}
+
+#[derive(Clone)]
+pub enum StackedHashMap<'a, K, V> {
+    Nil,
+    Cons(HashMap<K, V>, &'a Self),
+}
+
+impl<'a, K: Hash + Eq, V> Default for StackedHashMap<'a, K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a, K: Hash + Eq, V> StackedHashMap<'a, K, V> {
+    pub fn new() -> Self {
+        Self::Nil
+    }
+    pub fn stack<'b>(&'a self, map: HashMap<K, V>) -> StackedHashMap<'b, K, V>
+    where
+        'a: 'b,
+    {
+        Self::Cons(map, self)
+    }
+    pub fn get<Q: Borrow<K>>(&self, key: Q) -> Option<&V> {
+        match self {
+            Self::Nil => None,
+            Self::Cons(map, rest) => map.get(key.borrow()).or_else(|| rest.get(key)),
+        }
     }
 }

@@ -413,6 +413,12 @@ pub enum Lir {
         hole: usize,
         value: usize,
     },
+
+    /// Convert a normal function to a closure
+    Curry {
+        function: QualifiedName,
+        result: usize,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {

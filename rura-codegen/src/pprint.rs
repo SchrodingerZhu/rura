@@ -437,6 +437,7 @@ impl Display for PrettyPrint<'_, Lir> {
                 write!(f, "%{} = constant {};", result, PrettyPrint::new(&**value))
             }
             Lir::Fill { hole, value } => write!(f, "fill %{} <- %{};", hole, value),
+            Lir::Curry { function, result } => write!(f, "%{} = curry %{};", result, function),
         }
     }
 }

@@ -435,6 +435,7 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_clone_instr,
         parse_drop_instr,
         parse_drop_for_reuse_instr,
+        parse_curry_instr,
     ))
     .context(expect("lir instruction"))
     .parse_next(i)
@@ -694,6 +695,18 @@ fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
             value,
             token: Some(token),
         })
+        .parse_next(i)
+}
+
+fn parse_curry_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "curry",
+        skip_space(qualified_name),
+        ";",
+    )
+        .map(|(result, _, _, function, _)| Lir::Curry { result, function })
         .parse_next(i)
 }
 

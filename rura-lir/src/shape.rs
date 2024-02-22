@@ -1,8 +1,8 @@
 use rura_parsing::ScalarType;
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
-use crate::types::{InductiveType, RuraType, TypeVar};
-use crate::Ident;
+use crate::lir::InductiveTypeDef;
+use crate::{types::TypeVar, Ident};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Layout(std::alloc::Layout);
@@ -51,14 +51,14 @@ pub enum ShapeError {
 }
 
 fn get_shape_inductive<'a, 'b: 'a>(
-    inductive: &'b InductiveType,
+    inductive: &'b InductiveTypeDef,
     context: &'a mut HashMap<&'b Ident, Shape>,
 ) -> Result<Shape, ShapeError> {
     let mut shapes = inductive
-        .constructors
+        .ctors
         .iter()
         .map(|c| {
-            c.args
+            c.params
                 .iter()
                 .map(|t| get_shape(t, context))
                 .collect::<Result<Vec<_>, _>>()

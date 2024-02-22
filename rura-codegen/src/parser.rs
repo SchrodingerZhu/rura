@@ -378,10 +378,10 @@ fn parse_closure_hoas(i: &mut &str) -> PResult<Lir> {
         parse_closure_params,
         skip_space("->"),
         parse_lir_type,
-        ws_or_comment,
-        parse_block,
+        skip_space(parse_block),
+        ";",
     )
-        .map(|(result, _, params, _, return_type, _, body)| {
+        .map(|(result, _, params, _, return_type, body, _)| {
             Lir::Closure(Box::new(ClosureCreation {
                 result,
                 params,

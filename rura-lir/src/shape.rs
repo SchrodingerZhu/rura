@@ -1,4 +1,4 @@
-use rura_parsing::ScalarType;
+use rura_parsing::PrimitiveType;
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
 use crate::lir::InductiveTypeDef;
@@ -87,22 +87,22 @@ fn get_shape<'a, 'b: 'a>(
 ) -> Result<Shape, ShapeError> {
     match rura_type {
         RuraType::Scalar(scalar) => match scalar {
-            ScalarType::I8 => Ok(Shape::Closed(Layout::new::<i8>())),
-            ScalarType::I16 => Ok(Shape::Closed(Layout::new::<i16>())),
-            ScalarType::I32 => Ok(Shape::Closed(Layout::new::<i32>())),
-            ScalarType::I64 => Ok(Shape::Closed(Layout::new::<i64>())),
-            ScalarType::ISize => Ok(Shape::Closed(Layout::new::<isize>())),
-            ScalarType::I128 => Ok(Shape::Closed(Layout::new::<i128>())),
-            ScalarType::U8 => Ok(Shape::Closed(Layout::new::<u8>())),
-            ScalarType::U16 => Ok(Shape::Closed(Layout::new::<u16>())),
-            ScalarType::U32 => Ok(Shape::Closed(Layout::new::<u32>())),
-            ScalarType::U64 => Ok(Shape::Closed(Layout::new::<u64>())),
-            ScalarType::USize => Ok(Shape::Closed(Layout::new::<usize>())),
-            ScalarType::U128 => Ok(Shape::Closed(Layout::new::<u128>())),
-            ScalarType::F32 => Ok(Shape::Closed(Layout::new::<f32>())),
-            ScalarType::F64 => Ok(Shape::Closed(Layout::new::<f64>())),
-            ScalarType::Bool => Ok(Shape::Closed(Layout::new::<bool>())),
-            ScalarType::Char => Ok(Shape::Closed(Layout::new::<char>())),
+            PrimitiveType::I8 => Ok(Shape::Closed(Layout::new::<i8>())),
+            PrimitiveType::I16 => Ok(Shape::Closed(Layout::new::<i16>())),
+            PrimitiveType::I32 => Ok(Shape::Closed(Layout::new::<i32>())),
+            PrimitiveType::I64 => Ok(Shape::Closed(Layout::new::<i64>())),
+            PrimitiveType::ISize => Ok(Shape::Closed(Layout::new::<isize>())),
+            PrimitiveType::I128 => Ok(Shape::Closed(Layout::new::<i128>())),
+            PrimitiveType::U8 => Ok(Shape::Closed(Layout::new::<u8>())),
+            PrimitiveType::U16 => Ok(Shape::Closed(Layout::new::<u16>())),
+            PrimitiveType::U32 => Ok(Shape::Closed(Layout::new::<u32>())),
+            PrimitiveType::U64 => Ok(Shape::Closed(Layout::new::<u64>())),
+            PrimitiveType::USize => Ok(Shape::Closed(Layout::new::<usize>())),
+            PrimitiveType::U128 => Ok(Shape::Closed(Layout::new::<u128>())),
+            PrimitiveType::F32 => Ok(Shape::Closed(Layout::new::<f32>())),
+            PrimitiveType::F64 => Ok(Shape::Closed(Layout::new::<f64>())),
+            PrimitiveType::Bool => Ok(Shape::Closed(Layout::new::<bool>())),
+            PrimitiveType::Char => Ok(Shape::Closed(Layout::new::<char>())),
         },
         RuraType::Unit => Ok(Shape::Closed(Layout::new::<()>())),
         RuraType::Bottom => Err(ShapeError::BottomType),
@@ -246,8 +246,8 @@ mod test {
     #[test]
     fn test_try_from_rura_type_for_shape() {
         let rura_type = RuraType::Tuple(Box::new([
-            RuraType::Scalar(ScalarType::I32),
-            RuraType::Scalar(ScalarType::F64),
+            RuraType::Scalar(PrimitiveType::I32),
+            RuraType::Scalar(PrimitiveType::F64),
         ]));
         let shape = Shape::try_from(&rura_type).unwrap();
         assert_eq!(
@@ -273,14 +273,14 @@ mod test {
         };
         let rura_type = RuraType::ResolvedInductive(
             Box::new(box_type.clone()),
-            Box::new([RuraType::Scalar(ScalarType::USize)]),
+            Box::new([RuraType::Scalar(PrimitiveType::USize)]),
         );
         let shape_x = Shape::try_from(&rura_type).unwrap();
         let rura_type = RuraType::ResolvedInductive(
             Box::new(box_type),
             Box::new([RuraType::TypeRef(
                 QualifiedName(Box::new(["Box".into()])),
-                Box::new([RuraType::Scalar(ScalarType::USize)]),
+                Box::new([RuraType::Scalar(PrimitiveType::USize)]),
             )]),
         );
         let shape_y = Shape::try_from(&rura_type).unwrap();

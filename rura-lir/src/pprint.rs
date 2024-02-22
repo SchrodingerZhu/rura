@@ -584,7 +584,7 @@ impl Display for PrettyPrint<'_, Module> {
 mod test {
     use super::*;
     use crate::parser::parse_module;
-    use rura_parsing::ScalarType;
+    use rura_parsing::PrimitiveType;
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();
@@ -605,21 +605,25 @@ mod test {
     fn test_lir_type_pprint() {
         let ty = LirType::Object(
             QualifiedName::new(Box::new([Ident::new("std"), Ident::new("Option")])),
-            Box::new([LirType::Scalar(ScalarType::USize)]),
+            Box::new([LirType::Scalar(PrimitiveType::USize)]),
         );
         assert_eq!(format!("{}", PrettyPrint::new(&ty)), "std::Option<usize>");
         assert_type_eq(&ty);
-        assert_type_eq(&LirType::Scalar(ScalarType::USize));
+        assert_type_eq(&LirType::Scalar(PrimitiveType::USize));
         assert_type_eq(&LirType::Tuple(Box::new([LirType::Scalar(
-            ScalarType::USize,
+            PrimitiveType::USize,
         )])));
         assert_type_eq(&LirType::Closure(
-            Box::new([LirType::Scalar(ScalarType::USize)]),
-            Box::new(LirType::Scalar(ScalarType::USize)),
+            Box::new([LirType::Scalar(PrimitiveType::USize)]),
+            Box::new(LirType::Scalar(PrimitiveType::USize)),
         ));
-        assert_type_eq(&LirType::Ref(Box::new(LirType::Scalar(ScalarType::USize))));
+        assert_type_eq(&LirType::Ref(Box::new(LirType::Scalar(
+            PrimitiveType::USize,
+        ))));
         assert_type_eq(&LirType::TypeVar(TypeVar::Plain(Ident::new("T"))));
-        assert_type_eq(&LirType::Hole(Box::new(LirType::Scalar(ScalarType::USize))));
+        assert_type_eq(&LirType::Hole(Box::new(LirType::Scalar(
+            PrimitiveType::USize,
+        ))));
     }
     #[test]
     fn test_apply_pprint() {
@@ -670,8 +674,8 @@ mod test {
     fn test_closure_creation_pprint() {
         let closure = ClosureCreation {
             result: 0,
-            params: [(1, LirType::Scalar(ScalarType::USize))].into(),
-            return_type: LirType::Scalar(ScalarType::USize),
+            params: [(1, LirType::Scalar(PrimitiveType::USize))].into(),
+            return_type: LirType::Scalar(PrimitiveType::USize),
             body: Block([Lir::Return { value: 1 }].into()),
         };
         assert_lir_eq(&Lir::Closure(Box::new(closure)));
@@ -756,7 +760,7 @@ mod test {
             result: 0,
             type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
             ctor: Ident::new("Some"),
-            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            type_params: Box::new([LirType::Scalar(PrimitiveType::USize)]),
             args: [1].into(),
             token: None,
             unique_rc: false,
@@ -769,7 +773,7 @@ mod test {
             result: 0,
             type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
             ctor: Ident::new("Some"),
-            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            type_params: Box::new([LirType::Scalar(PrimitiveType::USize)]),
             args: [1].into(),
             token: Some(2),
             unique_rc: false,
@@ -782,7 +786,7 @@ mod test {
             result: 0,
             type_name: QualifiedName::new(Box::new([Ident::new("Option")])),
             ctor: Ident::new("Some"),
-            type_params: Box::new([LirType::Scalar(ScalarType::USize)]),
+            type_params: Box::new([LirType::Scalar(PrimitiveType::USize)]),
             args: [1].into(),
             token: None,
             unique_rc: true,

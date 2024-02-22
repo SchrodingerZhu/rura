@@ -109,7 +109,7 @@ impl Hash for Constant {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum ScalarType {
+pub enum PrimitiveType {
     I8,
     I16,
     I32,
@@ -126,27 +126,29 @@ pub enum ScalarType {
     F64,
     Bool,
     Char,
+    Str,
 }
 
-impl Display for ScalarType {
+impl Display for PrimitiveType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            ScalarType::I8 => keywords::I8,
-            ScalarType::I16 => keywords::I16,
-            ScalarType::I32 => keywords::I32,
-            ScalarType::I64 => keywords::I64,
-            ScalarType::ISize => keywords::ISIZE,
-            ScalarType::I128 => keywords::I128,
-            ScalarType::U8 => keywords::U8,
-            ScalarType::U16 => keywords::U16,
-            ScalarType::U32 => keywords::U32,
-            ScalarType::U64 => keywords::U64,
-            ScalarType::USize => keywords::USIZE,
-            ScalarType::U128 => keywords::U128,
-            ScalarType::F32 => keywords::F32,
-            ScalarType::F64 => keywords::F64,
-            ScalarType::Bool => keywords::BOOL,
-            ScalarType::Char => keywords::CHAR,
+            PrimitiveType::I8 => keywords::I8,
+            PrimitiveType::I16 => keywords::I16,
+            PrimitiveType::I32 => keywords::I32,
+            PrimitiveType::I64 => keywords::I64,
+            PrimitiveType::ISize => keywords::ISIZE,
+            PrimitiveType::I128 => keywords::I128,
+            PrimitiveType::U8 => keywords::U8,
+            PrimitiveType::U16 => keywords::U16,
+            PrimitiveType::U32 => keywords::U32,
+            PrimitiveType::U64 => keywords::U64,
+            PrimitiveType::USize => keywords::USIZE,
+            PrimitiveType::U128 => keywords::U128,
+            PrimitiveType::F32 => keywords::F32,
+            PrimitiveType::F64 => keywords::F64,
+            PrimitiveType::Bool => keywords::BOOL,
+            PrimitiveType::Char => keywords::CHAR,
+            PrimitiveType::Str => keywords::STR,
         })
     }
 }
@@ -212,25 +214,25 @@ where
         .parse_next(i)
 }
 
-pub fn scalar_type(i: &mut &str) -> PResult<ScalarType> {
+pub fn scalar_type(i: &mut &str) -> PResult<PrimitiveType> {
     let mut dispatch = dispatch! {
         alphanumeric1;
-        keywords::I8 => empty.value(ScalarType::I8),
-        keywords::I16 => empty.value(ScalarType::I16),
-        keywords::I32 => empty.value(ScalarType::I32),
-        keywords::I64 => empty.value(ScalarType::I64),
-        keywords::ISIZE => empty.value(ScalarType::ISize),
-        keywords::I128 => empty.value(ScalarType::I128),
-        keywords::U8 => empty.value(ScalarType::U8),
-        keywords::U16 => empty.value(ScalarType::U16),
-        keywords::U32 => empty.value(ScalarType::U32),
-        keywords::U64 => empty.value(ScalarType::U64),
-        keywords::USIZE => empty.value(ScalarType::USize),
-        keywords::U128 => empty.value(ScalarType::U128),
-        keywords::F32 => empty.value(ScalarType::F32),
-        keywords::F64 => empty.value(ScalarType::F64),
-        keywords::BOOL => empty.value(ScalarType::Bool),
-        keywords::CHAR => empty.value(ScalarType::Char),
+        keywords::I8 => empty.value(PrimitiveType::I8),
+        keywords::I16 => empty.value(PrimitiveType::I16),
+        keywords::I32 => empty.value(PrimitiveType::I32),
+        keywords::I64 => empty.value(PrimitiveType::I64),
+        keywords::ISIZE => empty.value(PrimitiveType::ISize),
+        keywords::I128 => empty.value(PrimitiveType::I128),
+        keywords::U8 => empty.value(PrimitiveType::U8),
+        keywords::U16 => empty.value(PrimitiveType::U16),
+        keywords::U32 => empty.value(PrimitiveType::U32),
+        keywords::U64 => empty.value(PrimitiveType::U64),
+        keywords::USIZE => empty.value(PrimitiveType::USize),
+        keywords::U128 => empty.value(PrimitiveType::U128),
+        keywords::F32 => empty.value(PrimitiveType::F32),
+        keywords::F64 => empty.value(PrimitiveType::F64),
+        keywords::BOOL => empty.value(PrimitiveType::Bool),
+        keywords::CHAR => empty.value(PrimitiveType::Char),
         _ => fail,
     };
     dispatch.parse_next(i)

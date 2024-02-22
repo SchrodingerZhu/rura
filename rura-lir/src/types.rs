@@ -1,6 +1,6 @@
 use std::{fmt::Display, fmt::Formatter};
 
-use rura_parsing::ScalarType;
+use rura_parsing::PrimitiveType;
 
 use crate::{Ident, QualifiedName};
 
@@ -27,7 +27,7 @@ pub enum LirType {
     /// fn (A, B) -> C
     Closure(Box<[Self]>, Box<Self>),
     /// usize, i32, etc
-    Scalar(ScalarType),
+    Scalar(PrimitiveType),
     /// ()
     Unit,
     /// !

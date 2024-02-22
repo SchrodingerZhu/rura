@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::hash::Hash;
 
 use proc_macro2::TokenStream;
@@ -372,7 +373,63 @@ fn qualified_name(name: &QualifiedName) -> TokenStream {
     }
 }
 
+macro_rules! box_iter {
+    ($($x:expr),*) => {
+        Box::new([$($x),*].into_iter())
+    };
+    (@ $x:expr) => {
+        Box::new($x)
+    };
+}
+
+impl ClosureCreation {
+    pub fn free_operands<'a>(&'a self) -> Vec<usize> {
+        todo!()
+    }
+}
+
 impl Lir {
+    pub fn defining_operand<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        match self {
+            Lir::Apply { result, .. } => box_iter![*result],
+            Lir::BinaryOp(inner) => box_iter![inner.result],
+            Lir::Call(inner) => box_iter![inner.result],
+            Lir::Clone { result, .. } => box_iter![*result],
+            Lir::Closure(inner) => box_iter![inner.result],
+            Lir::Drop { token, .. } => box_iter!(@ token.clone().into_iter()),
+            Lir::CtorCall(inner) => box_iter![inner.result],
+            Lir::InductiveElimination { .. } => box_iter![],
+            Lir::Return { .. } => box_iter![],
+            Lir::TupleIntro { result, .. } => box_iter![*result],
+            Lir::TupleElim { eliminator, .. } => box_iter!(@ eliminator.iter().copied()),
+            Lir::UnaryOp(inner) => box_iter![inner.result],
+            Lir::IfThenElse(..) => box_iter![],
+            Lir::ConstantScalar { result, .. } => box_iter![*result],
+            Lir::Fill { .. } => box_iter![],
+            Lir::Curry { result, .. } => box_iter![*result],
+        }
+    }
+    pub fn using_operands<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        match self {
+            Lir::Apply { closure, arg, .. } => box_iter![*closure, *arg],
+            Lir::BinaryOp(inner) => box_iter![inner.lhs, inner.rhs],
+            Lir::Call(inner) => box_iter!(@ inner.args.iter().copied()),
+            Lir::Clone { value, .. } => box_iter![*value],
+            Lir::Closure(inner) => box_iter!(@ inner.free_operands().into_iter()),
+            Lir::Drop { value, .. } => box_iter![*value],
+            Lir::CtorCall(inner) => box_iter!(@ inner.args.iter().copied()),
+            Lir::InductiveElimination { inductive, .. } => box_iter![*inductive],
+            Lir::Return { value } => box_iter![*value],
+            Lir::TupleIntro { elements, .. } => box_iter!(@ elements.iter().copied()),
+            Lir::TupleElim { tuple, .. } => box_iter![*tuple],
+            Lir::UnaryOp(inner) => box_iter![inner.operand],
+            Lir::IfThenElse(inner) => box_iter![inner.condition],
+            Lir::ConstantScalar { .. } => box_iter![],
+            Lir::Fill { hole, value } => box_iter![*hole, *value],
+            Lir::Curry { .. } => box_iter![],
+        }
+    }
+
     pub fn lower_to_rust(&self) -> TokenStream {
         match self {
             Lir::Drop { value, token } => {

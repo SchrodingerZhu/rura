@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::hash::Hash;
 
 use proc_macro2::TokenStream;
@@ -383,7 +382,7 @@ macro_rules! box_iter {
 }
 
 impl ClosureCreation {
-    pub fn free_operands<'a>(&'a self) -> Vec<usize> {
+    pub fn free_operands(&self) -> Vec<usize> {
         todo!()
     }
 }
@@ -396,7 +395,7 @@ impl Lir {
             Lir::Call(inner) => box_iter![inner.result],
             Lir::Clone { result, .. } => box_iter![*result],
             Lir::Closure(inner) => box_iter![inner.result],
-            Lir::Drop { token, .. } => box_iter!(@ token.clone().into_iter()),
+            Lir::Drop { token, .. } => box_iter!(@ (*token).into_iter()),
             Lir::CtorCall(inner) => box_iter![inner.result],
             Lir::InductiveElimination { .. } => box_iter![],
             Lir::Return { .. } => box_iter![],

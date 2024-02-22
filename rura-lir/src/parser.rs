@@ -1,46 +1,21 @@
-use winnow::ascii::{alpha1, alphanumeric1, dec_int, dec_uint, digit1, float};
-use winnow::combinator::{alt, dispatch, empty, fail, opt, preceded, repeat, separated};
+use winnow::ascii::{alpha1, digit1};
+use winnow::combinator::{alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    expect, identifier, keywords, optional_type_parameters, qualified_name, skip_space,
-    ws_or_comment,
+    expect, identifier, keywords, optional_type_parameters, qualified_name, scalar_type,
+    skip_space, ws_or_comment, ScalarConstant,
 };
-
-use crate::types::{LirType, ScalarType, TypeVar};
-use crate::{Ident, Member, QualifiedName};
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
-    InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnOp, UnaryOp,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnOp, UnaryOp,
 };
-
-fn parse_scalar_type(i: &mut &str) -> PResult<ScalarType> {
-    let mut dispatch = dispatch! {
-        alphanumeric1;
-        keywords::I8 => empty.value(ScalarType::I8),
-        keywords::I16 => empty.value(ScalarType::I16),
-        keywords::I32 => empty.value(ScalarType::I32),
-        keywords::I64 => empty.value(ScalarType::I64),
-        keywords::ISIZE => empty.value(ScalarType::ISize),
-        keywords::I128 => empty.value(ScalarType::I128),
-        keywords::U8 => empty.value(ScalarType::U8),
-        keywords::U16 => empty.value(ScalarType::U16),
-        keywords::U32 => empty.value(ScalarType::U32),
-        keywords::U64 => empty.value(ScalarType::U64),
-        keywords::USIZE => empty.value(ScalarType::USize),
-        keywords::U128 => empty.value(ScalarType::U128),
-        keywords::F32 => empty.value(ScalarType::F32),
-        keywords::F64 => empty.value(ScalarType::F64),
-        keywords::BOOL => empty.value(ScalarType::Bool),
-        keywords::CHAR => empty.value(ScalarType::Char),
-        _ => fail,
-    };
-    dispatch.parse_next(i)
-}
+use crate::types::{LirType, TypeVar};
+use crate::{Ident, Member, QualifiedName};
 
 fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
     ("◊", parse_lir_type)
@@ -81,7 +56,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     alt((
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
-        parse_scalar_type.map(LirType::Scalar),
+        scalar_type.map(LirType::Scalar),
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
@@ -129,61 +104,42 @@ fn parse_operand(i: &mut &str) -> PResult<usize> {
 }
 
 fn parse_typed_char(i: &mut &str) -> PResult<ScalarConstant> {
-    (digit1, skip_space(":"), skip_space("char"))
+    (digit1, skip_space(":"), skip_space(keywords::CHAR))
         .try_map(|(data, _, _)| data.parse::<u32>())
         .verify_map(char::from_u32)
         .map(ScalarConstant::Char)
         .parse_next(i)
 }
 
-fn parse_typed_bool(i: &mut &str) -> PResult<ScalarConstant> {
-    (alpha1, skip_space(":"), skip_space("bool"))
-        .try_map(|(data, _, _)| data.parse::<bool>())
-        .map(ScalarConstant::Bool)
-        .parse_next(i)
-}
-
-fn parse_typed_f32(i: &mut &str) -> PResult<ScalarConstant> {
-    (float, skip_space(":"), skip_space("f32"))
-        .map(|(data, _, _)| ScalarConstant::F32(data))
-        .parse_next(i)
-}
-
-fn parse_typed_f64(i: &mut &str) -> PResult<ScalarConstant> {
-    (float, skip_space(":"), skip_space("f64"))
-        .map(|(data, _, _)| ScalarConstant::F64(data))
-        .parse_next(i)
-}
-
-macro_rules! parse_typed_int {
-    (signed $name:ident $ctor:ident $tag:literal) => {
+macro_rules! parse_typed_value {
+    ($name:ident $parser:ident $kw:ident) => {
         fn $name(i: &mut &str) -> PResult<ScalarConstant> {
-            (dec_int, skip_space(":"), skip_space($tag))
-                .map(|(data, _, _)| ScalarConstant::$ctor(data))
-                .parse_next(i)
-        }
-    };
-    (unsigned $name:ident $ctor:ident $tag:literal) => {
-        fn $name(i: &mut &str) -> PResult<ScalarConstant> {
-            (dec_uint, skip_space(":"), skip_space($tag))
-                .map(|(data, _, _)| ScalarConstant::$ctor(data))
+            (
+                rura_parsing::$parser,
+                skip_space(":"),
+                skip_space(keywords::$kw),
+            )
+                .map(|p| p.0)
                 .parse_next(i)
         }
     };
 }
 
-parse_typed_int!(signed parse_typed_i8 I8 "i8");
-parse_typed_int!(signed parse_typed_i16 I16 "i16");
-parse_typed_int!(signed parse_typed_i32 I32 "i32");
-parse_typed_int!(signed parse_typed_i64 I64 "i64");
-parse_typed_int!(signed parse_typed_i128 I128 "i128");
-parse_typed_int!(signed parse_typed_isize ISize "isize");
-parse_typed_int!(unsigned parse_typed_u8 U8 "u8");
-parse_typed_int!(unsigned parse_typed_u16 U16 "u16");
-parse_typed_int!(unsigned parse_typed_u32 U32 "u32");
-parse_typed_int!(unsigned parse_typed_u64 U64 "u64");
-parse_typed_int!(unsigned parse_typed_u128 U128 "u128");
-parse_typed_int!(unsigned parse_typed_usize USize "usize");
+parse_typed_value!(parse_typed_bool boolean BOOL);
+parse_typed_value!(parse_typed_f32 f32 F32);
+parse_typed_value!(parse_typed_f64 f64 F64);
+parse_typed_value!(parse_typed_i8 i8 I8);
+parse_typed_value!(parse_typed_i16 i16 I16);
+parse_typed_value!(parse_typed_i32 i32 I32);
+parse_typed_value!(parse_typed_i64 i64 I64);
+parse_typed_value!(parse_typed_i128 i128 I128);
+parse_typed_value!(parse_typed_isize isize ISIZE);
+parse_typed_value!(parse_typed_u8 u8 U8);
+parse_typed_value!(parse_typed_u16 u16 U16);
+parse_typed_value!(parse_typed_u32 u32 U32);
+parse_typed_value!(parse_typed_u64 u64 U64);
+parse_typed_value!(parse_typed_u128 u128 U128);
+parse_typed_value!(parse_typed_usize usize USIZE);
 
 fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
     let inner = alt((
@@ -901,7 +857,7 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_parsing::eol_comment;
+    use rura_parsing::{eol_comment, ScalarType};
     use winnow::ascii::digit0;
 
     use super::*;

@@ -1,6 +1,7 @@
+use rura_parsing::ScalarType;
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
-use crate::types::{InductiveType, RuraType, ScalarType, TypeVar};
+use crate::types::{InductiveType, RuraType, TypeVar};
 use crate::Ident;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

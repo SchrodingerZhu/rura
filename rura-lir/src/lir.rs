@@ -3,6 +3,8 @@ use std::hash::Hash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use rura_parsing::ScalarConstant;
+
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, Member, QualifiedName};
 
@@ -170,74 +172,6 @@ impl InductiveEliminator {
                 #header
                 #(#body)*
             }
-        }
-    }
-}
-#[derive(Clone, Debug)]
-pub enum ScalarConstant {
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    ISize(isize),
-    I128(i128),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    USize(usize),
-    U128(u128),
-    F32(f32),
-    F64(f64),
-    Bool(bool),
-    Char(char),
-}
-
-impl PartialEq for ScalarConstant {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::I8(a), Self::I8(b)) => a == b,
-            (Self::I16(a), Self::I16(b)) => a == b,
-            (Self::I32(a), Self::I32(b)) => a == b,
-            (Self::I64(a), Self::I64(b)) => a == b,
-            (Self::ISize(a), Self::ISize(b)) => a == b,
-            (Self::I128(a), Self::I128(b)) => a == b,
-            (Self::U8(a), Self::U8(b)) => a == b,
-            (Self::U16(a), Self::U16(b)) => a == b,
-            (Self::U32(a), Self::U32(b)) => a == b,
-            (Self::U64(a), Self::U64(b)) => a == b,
-            (Self::USize(a), Self::USize(b)) => a == b,
-            (Self::U128(a), Self::U128(b)) => a == b,
-            (Self::F32(a), Self::F32(b)) => a.to_bits() == b.to_bits(),
-            (Self::F64(a), Self::F64(b)) => a.to_bits() == b.to_bits(),
-            (Self::Bool(a), Self::Bool(b)) => a == b,
-            (Self::Char(a), Self::Char(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-impl Eq for ScalarConstant {}
-
-impl Hash for ScalarConstant {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
-        match self {
-            Self::I8(a) => a.hash(state),
-            Self::I16(a) => a.hash(state),
-            Self::I32(a) => a.hash(state),
-            Self::I64(a) => a.hash(state),
-            Self::ISize(a) => a.hash(state),
-            Self::I128(a) => a.hash(state),
-            Self::U8(a) => a.hash(state),
-            Self::U16(a) => a.hash(state),
-            Self::U32(a) => a.hash(state),
-            Self::U64(a) => a.hash(state),
-            Self::USize(a) => a.hash(state),
-            Self::U128(a) => a.hash(state),
-            Self::F32(a) => a.to_bits().hash(state),
-            Self::F64(a) => a.to_bits().hash(state),
-            Self::Bool(a) => a.hash(state),
-            Self::Char(a) => a.hash(state),
         }
     }
 }

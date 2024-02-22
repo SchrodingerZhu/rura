@@ -1,9 +1,10 @@
+use rura_parsing::ScalarConstant;
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
-    InductiveTypeDef, Lir, MakeMutReceiver, Module, ScalarConstant, TraitExpr, UnaryOp,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, Member, QualifiedName};
@@ -597,7 +598,7 @@ impl Display for PrettyPrint<'_, Module> {
 mod test {
     use super::*;
     use crate::parser::parse_module;
-    use crate::types::ScalarType;
+    use rura_parsing::ScalarType;
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();

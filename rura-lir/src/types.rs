@@ -1,53 +1,8 @@
 use std::{fmt::Display, fmt::Formatter};
 
+use rura_parsing::ScalarType;
+
 use crate::{fmt_separated, Ident, QualifiedName};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum ScalarType {
-    I8,
-    I16,
-    I32,
-    I64,
-    ISize,
-    I128,
-    U8,
-    U16,
-    U32,
-    U64,
-    USize,
-    U128,
-    F32,
-    F64,
-    Bool,
-    Char,
-}
-
-impl Display for ScalarType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ScalarType::I8 => "i8",
-                ScalarType::I16 => "i16",
-                ScalarType::I32 => "i32",
-                ScalarType::I64 => "i64",
-                ScalarType::ISize => "isize",
-                ScalarType::I128 => "i128",
-                ScalarType::U8 => "u8",
-                ScalarType::U16 => "u16",
-                ScalarType::U32 => "u32",
-                ScalarType::U64 => "u64",
-                ScalarType::USize => "usize",
-                ScalarType::U128 => "u128",
-                ScalarType::F32 => "f32",
-                ScalarType::F64 => "f64",
-                ScalarType::Bool => "bool",
-                ScalarType::Char => "char",
-            }
-        )
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Constructor {

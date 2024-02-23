@@ -102,6 +102,9 @@ mod test {
                 fn main() -> i32 {
                     %0 = constant 0 : i32;
                     %1 = constant 1 : i32;
+                    %3 = (%0 : i32) -> i32 {
+                        %2 = %0 + %1;
+                    };
                 }
             }
         "#;

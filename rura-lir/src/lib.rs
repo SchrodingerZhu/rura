@@ -40,18 +40,6 @@ impl From<&str> for Ident {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Member {
-    Named(Ident),
-    Index(usize),
-}
-
-impl Member {
-    pub fn is_named(&self) -> bool {
-        matches!(self, Self::Named(_))
-    }
-}
-
 impl Ident {
     pub fn new(s: impl Into<Box<str>>) -> Self {
         Self(s.into())

@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use unicode_ident::{is_xid_continue, is_xid_start};
 use winnow::ascii::{
@@ -9,6 +10,53 @@ use winnow::combinator::{alt, delimited, empty, fail, opt, preceded, repeat, sep
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::{none_of, one_of, take_till, take_until, take_while};
 use winnow::{dispatch, PResult, Parser};
+
+/// Name of symbols (e.g. global definitions, local variables), with its raw text and an associated
+/// globally unique ID. The ID is just the address of the internal RC-tracked string.
+///
+/// The technique of globally unique IDs for names is called [capture-avoiding substitution].
+///
+/// [capture-avoiding substitution]: https://en.wikipedia.org/wiki/Lambda_calculus#Capture-avoiding_substitutions
+#[derive(Debug, Clone, Eq)]
+pub struct Name(Rc<String>);
+
+impl Name {
+    fn new<S: Into<String>>(raw: S) -> Self {
+        Self(Rc::new(raw.into()))
+    }
+
+    fn id(&self) -> usize {
+        Rc::as_ptr(&self.0) as _
+    }
+
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl<'a> From<&'a str> for Name {
+    fn from(s: &'a str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl Display for Name {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq<Self> for Name {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Hash for Name {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state)
+    }
+}
 
 pub mod keywords {
     pub const UNIT: &str = "()";
@@ -84,7 +132,7 @@ impl PartialEq for Constant {
 impl Eq for Constant {}
 
 impl Hash for Constant {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
         match self {
             Self::I8(a) => a.hash(state),
@@ -153,6 +201,26 @@ impl Display for PrimitiveType {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Constructor<Identifier, Type> {
+    pub name: Identifier,
+    pub params: Members<Identifier, Type>,
+}
+
+type Members<Identifier, Type> = Box<[(Member<Identifier>, Type)]>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Member<Identifier> {
+    Named(Identifier),
+    Index(usize),
+}
+
+impl<I> Member<I> {
+    pub fn is_named(&self) -> bool {
+        matches!(self, Self::Named(_))
+    }
+}
+
 pub fn expect(x: &'static str) -> StrContext {
     StrContext::Expected(StrContextValue::Description(x))
 }
@@ -214,7 +282,7 @@ where
         .parse_next(i)
 }
 
-pub fn scalar_type(i: &mut &str) -> PResult<PrimitiveType> {
+pub fn primitive_type(i: &mut &str) -> PResult<PrimitiveType> {
     let mut dispatch = dispatch! {
         alphanumeric1;
         keywords::I8 => empty.value(PrimitiveType::I8),
@@ -233,6 +301,7 @@ pub fn scalar_type(i: &mut &str) -> PResult<PrimitiveType> {
         keywords::F64 => empty.value(PrimitiveType::F64),
         keywords::BOOL => empty.value(PrimitiveType::Bool),
         keywords::CHAR => empty.value(PrimitiveType::Char),
+        keywords::STR => empty.value(PrimitiveType::Str),
         _ => fail,
     };
     dispatch.parse_next(i)
@@ -279,7 +348,9 @@ number!(unsigned u128 U128);
 number!(unsigned usize USize);
 
 pub fn character(input: &mut &str) -> PResult<char> {
-    delimited('\'', alt((plain_char, escape)), '\'').parse_next(input)
+    delimited('\'', alt((plain_char, escape)), '\'')
+        .context(expect("character"))
+        .parse_next(input)
 }
 
 fn plain_char(input: &mut &str) -> PResult<char> {
@@ -337,11 +408,49 @@ pub fn string(input: &mut &str) -> PResult<String> {
         }
         string
     });
-    delimited('"', build_string, '"').parse_next(input)
+    delimited('"', build_string, '"')
+        .context(expect("string"))
+        .parse_next(input)
+}
+
+pub fn members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+where
+    F: Clone + Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+{
+    opt(alt((named_members(typ.clone()), unnamed_members(typ))))
+        .map(|x| x.unwrap_or_default())
+        .context(expect("members"))
+}
+
+fn named_members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+{
+    let field = (identifier::<I>, skip_space(":"), typ).map(|(n, _, t)| (Member::Named(n), t));
+    delimited("{", separated(1.., skip_space(field), ","), "}")
+        .map(|v: Vec<_>| v.into_boxed_slice())
+        .context(expect("named members"))
+}
+
+fn unnamed_members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+{
+    let ty = separated(1.., skip_space(typ), ",").map(|x: Vec<_>| {
+        x.into_iter()
+            .enumerate()
+            .map(|(idx, ty)| (Member::<I>::Index(idx), ty))
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    });
+    delimited("(", ty, ")").context(expect("unnamed members"))
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{character, string};
 
     #[test]

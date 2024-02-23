@@ -5,17 +5,17 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    character, expect, identifier, keywords, optional_type_parameters, qualified_name, scalar_type,
-    skip_space, string, ws_or_comment, Constant,
+    character, expect, identifier, keywords, members, optional_type_parameters, primitive_type,
+    qualified_name, skip_space, string, ws_or_comment, Constant, Member,
 };
 
 use crate::lir::{
     ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
-    InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnOp, UnaryOp,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, RefField, TraitExpr, UnOp, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
-use crate::{Ident, Member, QualifiedName};
+use crate::{Ident, QualifiedName};
 
 fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
     ("◊", parse_lir_type)
@@ -56,7 +56,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     alt((
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
-        scalar_type.map(LirType::Primitive),
+        primitive_type.map(LirType::Primitive),
         parse_tuple_type,
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
@@ -418,7 +418,7 @@ fn parse_unnamed_value_bindings(i: &mut &str) -> PResult<Vec<usize>> {
         .parse_next(i)
 }
 
-fn parse_member_bindings(i: &mut &str) -> PResult<Box<[(Member, usize)]>> {
+fn parse_member_bindings(i: &mut &str) -> PResult<Box<[RefField]>> {
     let named = parse_named_value_bindings.map(|inner| {
         inner
             .into_iter()
@@ -756,33 +756,8 @@ fn parse_extern_function_def(i: &mut &str) -> PResult<FunctionPrototype> {
         .parse_next(i)
 }
 
-fn parse_named_member_list(i: &mut &str) -> PResult<Box<[(Member, LirType)]>> {
-    let field = (identifier::<Ident>, skip_space(":"), parse_lir_type)
-        .map(|(name, _, ty)| (Member::Named(name.clone()), ty));
-    ("{", separated(1.., skip_space(field), ","), "}")
-        .map(|(_, x, _)| Vec::into_boxed_slice(x))
-        .context(expect("named member list"))
-        .parse_next(i)
-}
-
-fn parse_unnamed_member_list(i: &mut &str) -> PResult<Box<[(Member, LirType)]>> {
-    let inner = separated(1.., skip_space(parse_lir_type), ",").map(|x: Vec<_>| {
-        x.into_iter()
-            .enumerate()
-            .map(|(idx, ty)| (Member::Index(idx), ty))
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
-    });
-    ("(", inner, ")")
-        .map(|(_, x, _)| x)
-        .context(expect("unnamed member list"))
-        .parse_next(i)
-}
-
 fn parse_ctor_def(i: &mut &str) -> PResult<CtorDef> {
-    let member_list = opt(alt((parse_named_member_list, parse_unnamed_member_list)))
-        .map(|x| x.unwrap_or_default());
-    (identifier, skip_space(member_list))
+    (identifier, skip_space(members(parse_lir_type)))
         .map(|(name, params)| CtorDef { name, params })
         .context(expect("constructor definition"))
         .parse_next(i)
@@ -800,7 +775,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
         .map(Vec::into_boxed_slice);
     (
         "enum",
-        skip_space(qualified_name).context(expect("qualified name")),
+        skip_space(qualified_name),
         optional_type_parameters,
         skip_space(bounds),
         "{",

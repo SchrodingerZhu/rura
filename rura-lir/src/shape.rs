@@ -131,7 +131,7 @@ pub fn get_value_shape<'a, 'b: 'a>(
         },
         LirType::Unit => Ok(Shape::Closed(Layout::new::<()>())),
         LirType::Bottom => Err(ShapeError::BottomType),
-        // value of a object is always a pointer
+        // value of an object is always a pointer
         LirType::Object(..) => Ok(Shape::Closed(Layout::new::<Rc<Option<usize>>>())),
         LirType::Closure { .. } => Ok(Shape::Closed(Layout::new::<Rc<dyn Any>>())),
         LirType::Tuple(tuple) => {
@@ -230,13 +230,14 @@ pub fn compare_shapes(a: &Shape, b: &Shape) -> ShapeSimilarity {
 
 #[cfg(test)]
 mod test {
+    use rura_parsing::Member;
 
-    use super::*;
     use crate::lir::CtorDef;
     use crate::pprint::PrettyPrint;
     use crate::types::*;
-    use crate::Member;
     use crate::QualifiedName;
+
+    use super::*;
 
     #[test]
     fn test_try_from_rura_type_for_shape() {

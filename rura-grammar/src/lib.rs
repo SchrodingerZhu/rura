@@ -1,57 +1,16 @@
 #![allow(unused_variables, dead_code, private_interfaces)] // FIXME
 
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 
-use winnow::combinator::{alt, repeat};
+use winnow::combinator::{alt, delimited, repeat, separated};
 use winnow::{PResult, Parser};
 
-/// Name of symbols (e.g. global definitions, local variables), with its raw text and an associated
-/// globally unique ID. The ID is just the address of the internal RC-tracked string.
-///
-/// The technique of globally unique IDs for names is called [capture-avoiding substitution].
-///
-/// [capture-avoiding substitution]: https://en.wikipedia.org/wiki/Lambda_calculus#Capture-avoiding_substitutions
-#[derive(Debug, Clone, Eq)]
-pub struct Name(Rc<String>);
-
-impl Name {
-    fn new<S: Into<String>>(raw: S) -> Self {
-        Self(Rc::new(raw.into()))
-    }
-
-    fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as _
-    }
-
-    fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl Display for Name {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl PartialEq<Self> for Name {
-    fn eq(&self, other: &Self) -> bool {
-        self.id() == other.id()
-    }
-}
-
-impl Hash for Name {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state)
-    }
-}
-
-pub trait Syntax: Display {}
+use rura_parsing::{
+    expect, identifier, members, optional_type_parameters, skip_space, Constructor, Name,
+};
 
 #[derive(Clone, Debug)]
-struct Parameter<T: Syntax> {
+struct Parameter<T> {
     name: Name,
     typ: Box<T>,
 }
@@ -59,38 +18,24 @@ struct Parameter<T: Syntax> {
 type Parameters<T> = Box<[Parameter<T>]>;
 
 #[derive(Clone, Debug)]
-struct Declaration<T: Syntax> {
+struct Declaration<T> {
     name: Name,
-    parameters: Parameter<T>,
+    parameters: Parameters<T>,
     return_type: Box<T>,
     definition: Definition<T>,
 }
 
 #[derive(Clone, Debug)]
-pub enum Definition<T: Syntax> {
+pub enum Definition<T> {
     Undefined,
-    Function(FunctionDefinition<T>),
-    Inductive(InductiveDefinition<T>),
-}
-
-#[derive(Clone, Debug)]
-pub struct FunctionDefinition<T: Syntax> {
-    body: Box<T>,
-}
-
-#[derive(Clone, Debug)]
-pub struct InductiveDefinition<T: Syntax> {
-    constructors: Box<[Constructor<T>]>,
-}
-
-#[derive(Clone, Debug)]
-struct Constructor<T: Syntax> {
-    name: Name,
-    arguments: Box<[T]>,
+    Function(Box<T>),
+    Inductive(Box<[Constructor<Name, T>]>),
 }
 
 #[derive(Clone, Debug)]
 pub enum Expression {
+    Type,
+
     Bool,
     False,
     True,
@@ -99,6 +44,7 @@ pub enum Expression {
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Expression::Type => "type",
             Expression::Bool => "bool",
             Expression::False => "false",
             Expression::True => "true",
@@ -106,25 +52,71 @@ impl Display for Expression {
     }
 }
 
-impl Syntax for Expression {}
+impl Parameter<Expression> {
+    fn type_parameter(name: Name) -> Self {
+        Self {
+            name,
+            typ: Box::new(Expression::Type),
+        }
+    }
+}
 
 type File = Box<[Declaration<Expression>]>;
 
 pub fn file(i: &mut &str) -> PResult<File> {
-    repeat(0.., declaration)
-        .parse_next(i)
-        .map(|f: Vec<_>| f.into_boxed_slice())
+    repeat(
+        0..,
+        skip_space(alt((function_declaration, inductive_declaration))),
+    )
+    .map(|f: Vec<_>| f.into_boxed_slice())
+    .parse_next(i)
 }
 
-fn declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
-    alt((function_declaration, inductive_declaration)).parse_next(i)
-}
-
-fn function_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
+fn function_declaration(_: &mut &str) -> PResult<Declaration<Expression>> {
     todo!()
 }
 
 fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
+    (
+        "enum",
+        skip_space(identifier::<Name>),
+        optional_type_parameters::<Name>,
+        "{",
+        "}",
+    )
+        .map(|(_, name, types, _, _)| Declaration {
+            name,
+            parameters: types
+                .into_vec()
+                .into_iter()
+                .map(Parameter::type_parameter)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            return_type: Box::new(Expression::Type),
+            definition: Definition::Undefined, // TODO
+        })
+        .context(expect("inductive type declaration"))
+        .parse_next(i)
+}
+
+fn inductive_braced_definition(i: &mut &str) -> PResult<Definition<Expression>> {
+    delimited("{", inductive_constructors, "}").parse_next(i)
+}
+
+fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
+    separated(1.., skip_space(inductive_constructor), ",")
+        .map(|ctors: Vec<_>| Definition::Inductive(ctors.into_boxed_slice()))
+        .parse_next(i)
+}
+
+fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, Expression>> {
+    (identifier, skip_space(members(expression)))
+        .map(|(name, params)| Constructor { name, params })
+        .context(expect("constructor definition"))
+        .parse_next(i)
+}
+
+fn expression(_: &mut &str) -> PResult<Expression> {
     todo!()
 }
 

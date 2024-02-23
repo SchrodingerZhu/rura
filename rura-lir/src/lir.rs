@@ -3,10 +3,10 @@ use std::hash::Hash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use rura_parsing::Constant;
+use rura_parsing::{Constant, Constructor, Member};
 
 use crate::types::{LirType, TypeVar};
-use crate::{Ident, Member, QualifiedName};
+use crate::{Ident, QualifiedName};
 
 /**
  * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
@@ -23,7 +23,7 @@ pub enum ArithMode {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MakeMutReceiver {
-    pub target: Member,
+    pub target: Member<Ident>,
     pub hole: usize,
     pub value: usize,
 }
@@ -33,12 +33,15 @@ impl MakeMutReceiver {
         matches!(self.target, Member::Named(_),)
     }
 }
+
+pub type RefField = (Member<Ident>, usize);
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EliminationStyle {
     /// Destruct the pattern into values and memory token.
     /// All values must be captured by some variable.
     Unwrap {
-        fields: Box<[(Member, usize)]>,
+        fields: Box<[(Member<Ident>, usize)]>,
         token: usize,
     },
     /// Prepare the pattern for inplace mutation.
@@ -48,10 +51,10 @@ pub enum EliminationStyle {
     Fixpoint(usize),
     /// Get reference of fields
     /// Partial field capture is allowed.
-    Ref(Box<[(Member, usize)]>),
+    Ref(Box<[RefField]>),
 }
 
-fn member_list(members: &[(Member, usize)]) -> TokenStream {
+fn member_list(members: &[(Member<Ident>, usize)]) -> TokenStream {
     let fields = members.iter().map(|(member, value)| match member {
         Member::Named(name) => {
             let name = ident(name);
@@ -494,11 +497,7 @@ pub struct FunctionDef {
     pub body: Block,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CtorDef {
-    pub name: Ident,
-    pub params: Box<[(Member, LirType)]>,
-}
+pub type CtorDef = Constructor<Ident, LirType>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InductiveTypeDef {

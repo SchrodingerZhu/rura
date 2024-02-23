@@ -3,5 +3,8 @@ name = "rura-grammar"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies.winnow]
-version = "0.6.2"
+[dependencies]
+winnow = "0.6.2"
+
+[dependencies.rura-parsing]
+path = "../rura-parsing"

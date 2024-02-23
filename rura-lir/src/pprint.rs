@@ -1,4 +1,4 @@
-use rura_parsing::Constant;
+use rura_parsing::{Constant, Member};
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
@@ -7,7 +7,7 @@ use crate::lir::{
     InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
-use crate::{fmt_separated, Ident, Member, QualifiedName};
+use crate::{fmt_separated, Ident, QualifiedName};
 
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
@@ -303,7 +303,7 @@ impl Display for PrettyPrint<'_, CtorCall> {
 }
 
 #[repr(transparent)]
-struct Binding<'a>(&'a (Member, usize));
+struct Binding<'a>(&'a (Member<Ident>, usize));
 
 impl Display for Binding<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -327,7 +327,10 @@ impl Display for PrettyPrint<'_, MakeMutReceiver> {
     }
 }
 
-fn print_binding_list(f: &mut Formatter<'_>, bindings: &[(Member, usize)]) -> std::fmt::Result {
+fn print_binding_list(
+    f: &mut Formatter<'_>,
+    bindings: &[(Member<Ident>, usize)],
+) -> std::fmt::Result {
     if bindings[0].0.is_named() {
         write!(f, "{{")?;
         fmt_separated(f, bindings.iter().map(Binding), ", ")?;
@@ -446,7 +449,10 @@ impl Display for PrettyPrint<'_, FunctionDef> {
     }
 }
 
-fn print_member_list(f: &mut Formatter<'_>, members: &[(Member, LirType)]) -> std::fmt::Result {
+fn print_member_list(
+    f: &mut Formatter<'_>,
+    members: &[(Member<Ident>, LirType)],
+) -> std::fmt::Result {
     struct NamedMember<'a>(&'a Ident, &'a LirType);
     impl Display for NamedMember<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

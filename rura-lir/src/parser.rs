@@ -1,5 +1,5 @@
 use winnow::ascii::{alpha1, digit1};
-use winnow::combinator::{self, alt, opt, preceded, repeat, separated};
+use winnow::combinator::{alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
@@ -200,9 +200,8 @@ fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
 fn parse_unreachable_instr(i: &mut &str) -> PResult<Lir> {
     let panic =
         ("unreachable", skip_space("[panic]"), ";").map(|_| Lir::Unreachable { panic: true });
-
-    let nonpanic = ("unreachable", ws_or_comment, ";").map(|_| Lir::Unreachable { panic: false });
-    combinator::alt((panic, nonpanic)).parse_next(i)
+    let non_panic = ("unreachable", ws_or_comment, ";").map(|_| Lir::Unreachable { panic: false });
+    alt((panic, non_panic)).parse_next(i)
 }
 
 fn parse_tuple_intro_instr(i: &mut &str) -> PResult<Lir> {

@@ -234,12 +234,22 @@ pub fn multiline_comment(i: &mut &str) -> PResult<()> {
     ("/*", take_until(0.., "*/"), "*/").void().parse_next(i)
 }
 
-fn line_space0(input: &mut &str) -> PResult<()> {
-    take_while(0.., (' ', '\t', '\r')).void().parse_next(input)
+/// Parse whitespaces within a line.
+fn lws1(input: &mut &str) -> PResult<()> {
+    take_while(1.., (' ', '\t', '\r')).void().parse_next(input)
+}
+
+fn lws_or_multiline_comment(i: &mut &str) -> PResult<()> {
+    repeat(0.., alt((lws1, multiline_comment))).parse_next(i)
 }
 
 pub fn elidable_semicolon(i: &mut &str) -> PResult<()> {
-    (line_space0, alt(("\n", ";"))).void().parse_next(i)
+    (
+        lws_or_multiline_comment,
+        alt(("\n".void(), ";".void(), eol_comment)),
+    )
+        .void()
+        .parse_next(i)
 }
 
 pub fn ws_or_comment(i: &mut &str) -> PResult<()> {

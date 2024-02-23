@@ -356,6 +356,10 @@ pub enum Lir {
         function: QualifiedName,
         result: usize,
     },
+
+    Unreachable {
+        panic: bool,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {
@@ -391,6 +395,15 @@ impl ClosureCreation {
 }
 
 impl Lir {
+    pub fn is_terminator(&self) -> bool {
+        matches!(
+            self,
+            Lir::Return { .. }
+                | Lir::InductiveElimination { .. }
+                | Lir::IfThenElse(..)
+                | Lir::Unreachable { .. }
+        )
+    }
     pub fn defining_operand<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         match self {
             Lir::Apply { result, .. } => box_iter![*result],
@@ -409,6 +422,7 @@ impl Lir {
             Lir::Constant { result, .. } => box_iter![*result],
             Lir::Fill { .. } => box_iter![],
             Lir::Curry { result, .. } => box_iter![*result],
+            Lir::Unreachable { .. } => box_iter![],
         }
     }
     pub fn using_operands<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
@@ -429,6 +443,7 @@ impl Lir {
             Lir::Constant { .. } => box_iter![],
             Lir::Fill { hole, value } => box_iter![*hole, *value],
             Lir::Curry { .. } => box_iter![],
+            Lir::Unreachable { .. } => box_iter![],
         }
     }
 

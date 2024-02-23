@@ -1,5 +1,5 @@
 use winnow::ascii::{alpha1, digit1};
-use winnow::combinator::{alt, opt, preceded, repeat, separated};
+use winnow::combinator::{self, alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
@@ -195,6 +195,14 @@ fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
             result: op,
         })
         .parse_next(i)
+}
+
+fn parse_unreachable_instr(i: &mut &str) -> PResult<Lir> {
+    let panic =
+        ("unreachable", skip_space("[panic]"), ";").map(|_| Lir::Unreachable { panic: true });
+
+    let nonpanic = ("unreachable", ws_or_comment, ";").map(|_| Lir::Unreachable { panic: false });
+    combinator::alt((panic, nonpanic)).parse_next(i)
 }
 
 fn parse_tuple_intro_instr(i: &mut &str) -> PResult<Lir> {
@@ -397,6 +405,7 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_drop_instr,
         parse_drop_for_reuse_instr,
         parse_curry_instr,
+        parse_unreachable_instr,
     ))
     .context(expect("lir instruction"))
     .parse_next(i)
@@ -1401,6 +1410,13 @@ module test {
     fn test2() -> i32 {
         %1 = constant 3 : i32;
         return %1;
+    }
+    fn panic_test(%0: bool) -> ! {
+        if %0 {
+            unreachable;
+        } else {
+            unreachable [panic];
+        }
     }
     fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
 }

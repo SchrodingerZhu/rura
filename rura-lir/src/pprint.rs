@@ -565,6 +565,13 @@ impl Display for PrettyPrint<'_, Lir> {
             }
             Lir::Fill { hole, value } => write!(f, "fill %{} <- %{};", hole, value),
             Lir::Curry { function, result } => write!(f, "%{} = curry %{};", result, function),
+            Lir::Unreachable { panic } => {
+                if *panic {
+                    write!(f, "unreachable [panic];")
+                } else {
+                    write!(f, "unreachable;")
+                }
+            }
         }
     }
 }

@@ -15,6 +15,13 @@ use crate::{Ident, QualifiedName};
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block(pub Vec<Lir>);
+
+impl Block {
+    pub fn is_terminated(&self) -> bool {
+        self.0.last().map_or(false, |lir| lir.is_terminator())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ArithMode {
     Default,

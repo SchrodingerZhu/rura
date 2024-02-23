@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -11,7 +11,7 @@ use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::{none_of, one_of, take_till, take_until, take_while};
 use winnow::{dispatch, PResult, Parser};
 
-pub fn fmt_separated<T, P, I>(f: &mut Formatter<'_>, args: I, sep: P) -> std::fmt::Result
+pub fn fmt_separated<T, P, I, W: Write>(f: &mut W, args: I, sep: P) -> std::fmt::Result
 where
     T: Display,
     P: Display,
@@ -27,8 +27,8 @@ where
     Ok(())
 }
 
-pub fn fmt_delimited<T, P, I>(
-    f: &mut Formatter<'_>,
+pub fn fmt_delimited<T, P, I, W: Write>(
+    f: &mut W,
     left: P,
     args: I,
     sep: P,

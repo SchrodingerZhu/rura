@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use crate::{
     fmt_separated,
@@ -87,8 +87,8 @@ impl std::fmt::Display for DiagnosticContext<'_> {
     }
 }
 
-pub fn fmt_diagnostic_messages<'a>(
-    f: &mut std::fmt::Formatter<'_>,
+pub fn fmt_diagnostic_messages<'a, W: Write>(
+    f: &mut W,
     messages: &'a [Diagnostic<'a>],
 ) -> std::fmt::Result {
     for message in messages {
@@ -99,10 +99,15 @@ pub fn fmt_diagnostic_messages<'a>(
         }
         fmt_separated(f, message.context.iter(), " > ")?;
         write!(f, ":\n\t")?;
-        message.message.fmt(f)?;
+        write!(f, "{}", message.message)?;
         writeln!(f)?;
     }
     Ok(())
+}
+
+pub enum Action {
+    Continue,
+    Break,
 }
 
 pub trait DiagnosticPass: Pass {
@@ -111,15 +116,28 @@ pub trait DiagnosticPass: Pass {
         agent.push_context(DiagnosticContext::Module(&module.name));
         self.visit_module(module, &mut agent);
 
+        macro_rules! check_action {
+            ($act:expr) => {
+                if matches!($act, Action::Break) {
+                    return agent.into_messages();
+                }
+            };
+            (walk $act:expr) => {
+                if matches!($act, Action::Break) {
+                    return Action::Break;
+                }
+            };
+        }
+
         for def in module.inductive_types.iter() {
             agent.push_context(DiagnosticContext::InductiveTypeDef(&def.name));
-            self.visit_inductive_type_def(def, &mut agent);
+            check_action!(self.visit_inductive_type_def(def, &mut agent));
             agent.pop_context();
         }
 
         for external in module.external_functions.iter() {
             agent.push_context(DiagnosticContext::External(&external.name));
-            self.visit_external(external, &mut agent);
+            check_action!(self.visit_external(external, &mut agent));
             agent.pop_context();
         }
 
@@ -127,66 +145,86 @@ pub trait DiagnosticPass: Pass {
             pass: &mut S,
             instrs: &'a [Lir],
             agent: &mut DiagnosticAgent<'a>,
-        ) {
+        ) -> Action {
             for (i, instr) in instrs.iter().enumerate() {
                 agent.push_context(DiagnosticContext::Instrution(i));
-                pass.visit_instruction(instr, agent);
+                check_action!(walk pass.visit_instruction(instr, agent));
                 match instr {
                     Lir::IfThenElse(inner) => {
                         agent.push_context(DiagnosticContext::ThenBlock(i));
-                        walk_instr(pass, &inner.then_branch.0, agent);
+                        check_action!(walk walk_instr(pass, &inner.then_branch.0, agent));
                         agent.pop_context();
                         agent.push_context(DiagnosticContext::ElseBlock(i));
-                        walk_instr(pass, &inner.else_branch.0, agent);
+                        check_action!(walk walk_instr(pass, &inner.else_branch.0, agent));
                         agent.pop_context();
                     }
                     Lir::InductiveElimination { eliminator, .. } => {
                         for elim in eliminator.iter() {
                             agent.push_context(DiagnosticContext::Eliminator(i, &elim.ctor));
-                            walk_instr(pass, &elim.body.0, agent);
+                            check_action!(walk walk_instr(pass, &elim.body.0, agent));
                             agent.pop_context();
                         }
                     }
                     Lir::Closure(inner) => {
                         agent.push_context(DiagnosticContext::Closure(i));
-                        walk_instr(pass, &inner.body.0, agent);
+                        check_action!(walk walk_instr(pass, &inner.body.0, agent));
                         agent.pop_context();
                     }
                     _ => {}
                 }
                 agent.pop_context();
             }
+            Action::Continue
         }
 
         for function in module.functions.iter() {
             agent.push_context(DiagnosticContext::Function(&function.prototype.name));
-            self.visit_function_def(function, &mut agent);
-            walk_instr(self, &function.body.0, &mut agent);
+            check_action!(self.visit_function_def(function, &mut agent));
+            check_action!(walk_instr(self, &function.body.0, &mut agent));
             agent.pop_context();
         }
 
         agent.into_messages()
     }
 
-    fn visit_module<'a>(&mut self, module: &'a Module, context: &mut DiagnosticAgent<'a>);
+    #[allow(unused_variables)]
+    fn visit_module<'a>(
+        &mut self,
+        module: &'a Module,
+        context: &mut DiagnosticAgent<'a>,
+    ) -> Action {
+        Action::Continue
+    }
+    #[allow(unused_variables)]
     fn visit_external<'a>(
         &mut self,
         external: &'a FunctionPrototype,
         context: &mut DiagnosticAgent<'a>,
-    );
+    ) -> Action {
+        Action::Continue
+    }
+    #[allow(unused_variables)]
     fn visit_inductive_type_def<'a>(
         &mut self,
         typedef: &'a crate::lir::InductiveTypeDef,
         context: &mut DiagnosticAgent<'a>,
-    );
+    ) -> Action {
+        Action::Continue
+    }
+    #[allow(unused_variables)]
     fn visit_function_def<'a>(
         &mut self,
         function: &'a crate::lir::FunctionDef,
         context: &mut DiagnosticAgent<'a>,
-    );
+    ) -> Action {
+        Action::Continue
+    }
+    #[allow(unused_variables)]
     fn visit_instruction<'a>(
         &mut self,
         instruction: &'a crate::lir::Lir,
         context: &mut DiagnosticAgent<'a>,
-    );
+    ) -> Action {
+        Action::Continue
+    }
 }

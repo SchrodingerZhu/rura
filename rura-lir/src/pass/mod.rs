@@ -1,5 +1,11 @@
 pub mod diagnostic;
 
 pub trait Pass {
-    const IDENTIFIER: &'static str;
+    fn get_identifier(&self) -> &str;
 }
+
+pub enum BoxedPass {
+    Diagnostic(Box<dyn diagnostic::DiagnosticPass>),
+}
+
+pub type PassPluginHook = Option<fn() -> BoxedPass>;

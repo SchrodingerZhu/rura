@@ -1,3 +1,4 @@
+use rura_parsing::fmt_separated;
 use std::{
     borrow::Borrow,
     collections::HashMap,
@@ -11,24 +12,6 @@ pub mod pass;
 pub mod pprint;
 pub mod shape;
 pub mod types;
-
-fn fmt_separated<T: Display, P: Display, I>(
-    f: &mut Formatter<'_>,
-    args: I,
-    pat: P,
-) -> std::fmt::Result
-where
-    I: ExactSizeIterator<Item = T>,
-{
-    let length = args.len();
-    for (i, arg) in args.enumerate() {
-        write!(f, "{}", arg)?;
-        if i + 1 < length {
-            write!(f, "{}", pat)?;
-        }
-    }
-    Ok(())
-}
 
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

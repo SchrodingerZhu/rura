@@ -11,6 +11,39 @@ use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::{none_of, one_of, take_till, take_until, take_while};
 use winnow::{dispatch, PResult, Parser};
 
+pub fn fmt_separated<T, P, I>(f: &mut Formatter<'_>, args: I, sep: P) -> std::fmt::Result
+where
+    T: Display,
+    P: Display,
+    I: ExactSizeIterator<Item = T>,
+{
+    let length = args.len();
+    for (i, arg) in args.enumerate() {
+        write!(f, "{arg}")?;
+        if i + 1 < length {
+            write!(f, "{sep}")?;
+        }
+    }
+    Ok(())
+}
+
+pub fn fmt_delimited<T, P, I>(
+    f: &mut Formatter<'_>,
+    left: P,
+    args: I,
+    sep: P,
+    right: P,
+) -> std::fmt::Result
+where
+    T: Display,
+    P: Display,
+    I: ExactSizeIterator<Item = T>,
+{
+    write!(f, "{left}")?;
+    fmt_separated(f, args, sep)?;
+    write!(f, "{right}")
+}
+
 /// Name of symbols (e.g. global definitions, local variables), with its raw text and an associated
 /// globally unique ID. The ID is just the address of the internal RC-tracked string.
 ///

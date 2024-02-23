@@ -1,4 +1,4 @@
-use rura_parsing::{Constant, Member};
+use rura_parsing::{fmt_delimited, fmt_separated, Constant, Member};
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
@@ -7,7 +7,7 @@ use crate::lir::{
     InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
-use crate::{fmt_separated, Ident, QualifiedName};
+use crate::{Ident, QualifiedName};
 
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
@@ -282,13 +282,13 @@ impl Display for PrettyPrint<'_, CtorCall> {
         }
         write!(f, " {}", self.target.type_name)?;
         if !self.target.type_params.is_empty() {
-            write!(f, "<")?;
-            fmt_separated(
+            fmt_delimited(
                 f,
+                "<",
                 self.target.type_params.iter().map(PrettyPrint::new),
                 ", ",
+                ">",
             )?;
-            write!(f, ">")?;
         }
         write!(f, " @ {} (", self.target.ctor)?;
         if !self.target.args.is_empty() {
@@ -332,13 +332,9 @@ fn print_binding_list(
     bindings: &[(Member<Ident>, usize)],
 ) -> std::fmt::Result {
     if bindings[0].0.is_named() {
-        write!(f, "{{")?;
-        fmt_separated(f, bindings.iter().map(Binding), ", ")?;
-        write!(f, "}}")
+        fmt_delimited(f, "{", bindings.iter().map(Binding), ", ", "}")
     } else {
-        write!(f, "(")?;
-        fmt_separated(f, bindings.iter().map(Binding), ", ")?;
-        write!(f, ")")
+        fmt_delimited(f, "(", bindings.iter().map(Binding), ", ", ")")
     }
 }
 
@@ -355,13 +351,9 @@ fn print_match_arm_header(
         EliminationStyle::Mutation(bindings) => {
             write!(f, "[mutation] {}", ctor)?;
             if bindings[0].target.is_named() {
-                write!(f, "{{")?;
-                fmt_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
-                write!(f, "}}")
+                fmt_delimited(f, "{", bindings.iter().map(PrettyPrint::new), ", ", "}")
             } else {
-                write!(f, "(")?;
-                fmt_separated(f, bindings.iter().map(PrettyPrint::new), ", ")?;
-                write!(f, ")")
+                fmt_delimited(f, "(", bindings.iter().map(PrettyPrint::new), ", ", ")")
             }
         }
         EliminationStyle::Fixpoint(x) => write!(f, "[fixpoint(%{x})] {}", ctor),
@@ -394,9 +386,13 @@ impl Display for PrettyPrint<'_, TraitExpr> {
         }
         write!(f, "{}", self.target.name)?;
         if !self.target.params.is_empty() {
-            write!(f, "<")?;
-            fmt_separated(f, self.target.params.iter().map(TraitParameter), ", ")?;
-            write!(f, ">")?;
+            fmt_delimited(
+                f,
+                "<",
+                self.target.params.iter().map(TraitParameter),
+                ", ",
+                ">",
+            )?;
         }
         Ok(())
     }
@@ -420,9 +416,7 @@ impl Display for PrettyPrint<'_, FunctionPrototype> {
         }
         write!(f, "fn {}", self.target.name)?;
         if !self.target.type_params.is_empty() {
-            write!(f, "<")?;
-            fmt_separated(f, self.target.type_params.iter(), ", ")?;
-            write!(f, ">")?;
+            fmt_delimited(f, "<", self.target.type_params.iter(), ", ", ">")?;
         }
         write!(f, "(")?;
         fmt_separated(f, self.target.params.iter().map(Parameter), ", ")?;
@@ -460,9 +454,9 @@ fn print_member_list(
         }
     }
     if members[0].0.is_named() {
-        write!(f, "{{")?;
-        fmt_separated(
+        fmt_delimited(
             f,
+            "{",
             members.iter().map(|x| {
                 let Member::Named(ident) = &x.0 else {
                     unreachable!("must be named member fields")
@@ -470,12 +464,16 @@ fn print_member_list(
                 NamedMember(ident, &x.1)
             }),
             ", ",
-        )?;
-        write!(f, "}}")
+            "}",
+        )
     } else {
-        write!(f, "(")?;
-        fmt_separated(f, members.iter().map(|x| PrettyPrint::new(&x.1)), ", ")?;
-        write!(f, ")")
+        fmt_delimited(
+            f,
+            "(",
+            members.iter().map(|x| PrettyPrint::new(&x.1)),
+            ", ",
+            ")",
+        )
     }
 }
 
@@ -495,9 +493,7 @@ impl Display for PrettyPrint<'_, InductiveTypeDef> {
         let decl_padding = "\t".repeat(self.indent);
         write!(f, "{}enum {}", decl_padding, self.target.name)?;
         if !self.target.type_params.is_empty() {
-            write!(f, "<")?;
-            fmt_separated(f, self.target.type_params.iter(), ", ")?;
-            write!(f, ">")?;
+            fmt_delimited(f, "<", self.target.type_params.iter(), ", ", ">")?;
         }
         if !self.target.type_params.is_empty() {
             let padding = "\t".repeat(self.indent + 1);

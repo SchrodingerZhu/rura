@@ -7,8 +7,8 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable_semicolon, expect, identifier, members, optional_type_parameters, primitive_type,
-    skip_space, Constructor, Name, PrimitiveType,
+    elidable_semicolon, expect, fmt_delimited, identifier, members, optional_type_parameters,
+    primitive_type, skip_space, Constructor, Name, PrimitiveType,
 };
 
 #[derive(Clone, Debug)]
@@ -47,6 +47,8 @@ pub enum Expression {
     BoolType,
     False,
     True,
+
+    TupleType(Box<[Self]>),
 }
 
 impl Display for Expression {
@@ -59,6 +61,7 @@ impl Display for Expression {
             Expression::BoolType => BOOL,
             Expression::False => FALSE,
             Expression::True => TRUE,
+            Expression::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
         })
     }
 }
@@ -140,9 +143,16 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         UNIT.map(|_| Expression::UnitType),
         BOTTOM.map(|_| Expression::BottomType),
         primitive_type.map(Expression::PrimitiveType),
+        tuple_type,
     ))
     .context(expect("type expression"))
     .parse_next(i)
+}
+
+fn tuple_type(i: &mut &str) -> PResult<Expression> {
+    delimited("(", separated(1.., skip_space(type_expression), ","), ")")
+        .map(|types: Vec<_>| Expression::TupleType(types.into_boxed_slice()))
+        .parse_next(i)
 }
 
 #[cfg(test)]

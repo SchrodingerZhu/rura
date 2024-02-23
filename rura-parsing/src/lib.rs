@@ -59,6 +59,7 @@ impl Hash for Name {
 }
 
 pub mod keywords {
+    pub const TYPE: &str = "type";
     pub const UNIT: &str = "()";
     pub const BOTTOM: &str = "!";
     pub const I8: &str = "i8";

@@ -5,9 +5,10 @@ use std::fmt::{Display, Formatter};
 use winnow::combinator::{alt, delimited, repeat, separated};
 use winnow::{PResult, Parser};
 
+use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable_semicolon, expect, identifier, members, optional_type_parameters, skip_space,
-    Constructor, Name,
+    elidable_semicolon, expect, identifier, members, optional_type_parameters, primitive_type,
+    skip_space, Constructor, Name, PrimitiveType,
 };
 
 #[derive(Clone, Debug)]
@@ -37,7 +38,13 @@ pub enum Definition<T> {
 pub enum Expression {
     Type,
 
-    Bool,
+    BottomType,
+
+    UnitType,
+
+    PrimitiveType(PrimitiveType),
+
+    BoolType,
     False,
     True,
 }
@@ -45,10 +52,13 @@ pub enum Expression {
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Expression::Type => "type",
-            Expression::Bool => "bool",
-            Expression::False => "false",
-            Expression::True => "true",
+            Expression::Type => TYPE,
+            Expression::BottomType => BOTTOM,
+            Expression::UnitType => UNIT,
+            Expression::PrimitiveType(v) => return v.fmt(f),
+            Expression::BoolType => BOOL,
+            Expression::False => FALSE,
+            Expression::True => TRUE,
         })
     }
 }
@@ -80,16 +90,14 @@ fn function_declaration(_: &mut &str) -> PResult<Declaration<Expression>> {
 fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
     (
         "enum",
-        skip_space(identifier::<Name>),
-        optional_type_parameters::<Name>,
-        "{",
+        skip_space(identifier),
+        optional_type_parameters,
         alt((
             inductive_braced_definition,
             inductive_brace_elided_definition,
         )),
-        "}",
     )
-        .map(|(_, name, types, _, definition, _)| Declaration {
+        .map(|(_, name, types, definition)| Declaration {
             name,
             parameters: types
                 .into_vec()
@@ -121,14 +129,20 @@ fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
 }
 
 fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, Expression>> {
-    (identifier, skip_space(members(expression)))
+    (identifier, skip_space(members(type_expression)))
         .map(|(name, params)| Constructor { name, params })
         .context(expect("constructor"))
         .parse_next(i)
 }
 
-fn expression(_: &mut &str) -> PResult<Expression> {
-    todo!()
+fn type_expression(i: &mut &str) -> PResult<Expression> {
+    alt((
+        UNIT.map(|_| Expression::UnitType),
+        BOTTOM.map(|_| Expression::BottomType),
+        primitive_type.map(Expression::PrimitiveType),
+    ))
+    .context(expect("type expression"))
+    .parse_next(i)
 }
 
 #[cfg(test)]

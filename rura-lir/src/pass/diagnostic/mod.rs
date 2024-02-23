@@ -9,6 +9,7 @@ use crate::{
 use super::Pass;
 
 pub mod improper_termination;
+pub mod undefined_variable;
 
 pub enum DiagnosticLevel {
     Info,

@@ -5,9 +5,9 @@ use unicode_ident::{is_xid_continue, is_xid_start};
 use winnow::ascii::{
     alpha1, alphanumeric1, dec_int, dec_uint, float, multispace1, till_line_ending,
 };
-use winnow::combinator::{alt, delimited, empty, fail, opt, repeat, separated};
-use winnow::error::{ContextError, FromExternalError, ParserError, StrContext, StrContextValue};
-use winnow::token::{one_of, take_until, take_while};
+use winnow::combinator::{alt, delimited, empty, fail, opt, preceded, repeat, separated};
+use winnow::error::{ContextError, StrContext, StrContextValue};
+use winnow::token::{none_of, one_of, take_till, take_until, take_while};
 use winnow::{dispatch, PResult, Parser};
 
 pub mod keywords {
@@ -238,8 +238,6 @@ pub fn scalar_type(i: &mut &str) -> PResult<PrimitiveType> {
     dispatch.parse_next(i)
 }
 
-// TODO: Parse chars.
-
 pub fn boolean(i: &mut &str) -> PResult<Constant> {
     alpha1
         .try_map(|s: &str| s.parse::<bool>())
@@ -280,42 +278,19 @@ number!(unsigned u64 U64);
 number!(unsigned u128 U128);
 number!(unsigned usize USize);
 
-enum StringFragment<'a> {
-    Literal(&'a str),
-    Escape(char),
+pub fn character(input: &mut &str) -> PResult<char> {
+    delimited('\'', alt((plain_char, escape)), '\'').parse_next(input)
 }
 
-fn parse_literal<'a, E>(input: &mut &'a str) -> PResult<&'a str, E>
-where
-    E: ParserError<&'a str>,
-{
-    let not_quote_slash = winnow::token::take_till(1.., ['"', '\\']);
-    not_quote_slash
-        .verify(|s: &str| !s.is_empty())
-        .parse_next(input)
+fn plain_char(input: &mut &str) -> PResult<char> {
+    none_of(['\'', '\\']).parse_next(input)
 }
 
-fn parse_plain_char<'a, E>(input: &mut &'a str) -> PResult<char, E>
-where
-    E: ParserError<&'a str>,
-{
-    winnow::token::none_of(['\'', '\\']).parse_next(input)
-}
-
-fn parse_escape<'a, E>(input: &mut &'a str) -> PResult<char, E>
-where
-    E: ParserError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
-{
-    winnow::combinator::preceded(
+fn escape(input: &mut &str) -> PResult<char> {
+    preceded(
         '\\',
-        // `alt` tries each parser in sequence, returning the result of
-        // the first successful match
         alt((
-            parse_unicode,
-            // The `value` parser returns a fixed value (the first argument) if its
-            // parser (the second argument) succeeds. In these cases, it looks for
-            // the marker characters (n, r, t, etc) and returns the matching
-            // character (\n, \r, \t, etc).
+            unicode,
             'n'.value('\n'),
             'r'.value('\r'),
             't'.value('\t'),
@@ -329,107 +304,68 @@ where
     .parse_next(input)
 }
 
-/// Parse a unicode sequence, of the form u{XXXX}, where XXXX is 1 to 6
-/// hexadecimal numerals. We will combine this later with `parse_escaped_char`
-/// to parse sequences like \u{00AC}.
-fn parse_unicode<'a, E>(input: &mut &'a str) -> PResult<char, E>
-where
-    E: ParserError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
-{
-    // `take_while` parses between `m` and `n` bytes (inclusive) that match
-    // a predicate. `parse_hex` here parses between 1 and 6 hexadecimal numerals.
-    let parse_hex = take_while(1..=6, |c: char| c.is_ascii_hexdigit());
-
-    // `preceded` takes a prefix parser, and if it succeeds, returns the result
-    // of the body parser. In this case, it parses u{XXXX}.
-    let parse_delimited_hex = winnow::combinator::preceded(
-        'u',
-        // `delimited` is like `preceded`, but it parses both a prefix and a suffix.
-        // It returns the result of the middle parser. In this case, it parses
-        // {XXXX}, where XXXX is 1 to 6 hex numerals, and returns XXXX
-        delimited('{', parse_hex, '}'),
-    );
-
-    // `try_map` takes the result of a parser and applies a function that returns
-    // a Result. In this case we take the hex bytes from parse_hex and attempt to
-    // convert them to a u32.
-    let parse_u32 = parse_delimited_hex.try_map(move |hex| u32::from_str_radix(hex, 16));
-
-    // verify_map is like try_map, but it takes an Option instead of a Result. If
-    // the function returns None, verify_map returns an error. In this case, because
-    // not all u32 values are valid unicode code points, we have to fallibly
-    // convert to char with from_u32.
-    parse_u32.verify_map(std::char::from_u32).parse_next(input)
+enum StringFragment<'a> {
+    Literal(&'a str),
+    Escape(char),
 }
 
-pub fn parse_string<'a, E>(input: &mut &'a str) -> PResult<String, E>
-where
-    E: ParserError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
-{
+fn string_literal<'a>(input: &mut &'a str) -> PResult<&'a str> {
+    take_till(1.., ['"', '\\'])
+        .verify(|s: &str| !s.is_empty())
+        .parse_next(input)
+}
+
+fn unicode(input: &mut &str) -> PResult<char> {
+    let parse_hex = take_while(1..=6, |c: char| c.is_ascii_hexdigit());
+    let parse_delimited_hex = preceded('u', delimited('{', parse_hex, '}'));
+    let parse_u32 = parse_delimited_hex.try_map(move |hex| u32::from_str_radix(hex, 16));
+    parse_u32.verify_map(char::from_u32).parse_next(input)
+}
+
+pub fn string(input: &mut &str) -> PResult<String> {
     let build_string = repeat(
         0..,
-        // Our parser function – parses a single string fragment
-        winnow::combinator::alt((
-            parse_literal.map(StringFragment::Literal),
-            parse_escape.map(StringFragment::Escape),
+        alt((
+            string_literal.map(StringFragment::Literal),
+            escape.map(StringFragment::Escape),
         )),
     )
-    .fold(
-        // Our init value, an empty string
-        String::new,
-        // Our folding function. For each fragment, append the fragment to the
-        // string.
-        |mut string, fragment| {
-            match fragment {
-                StringFragment::Literal(s) => string.push_str(s),
-                StringFragment::Escape(c) => string.push(c),
-            }
-            string
-        },
-    );
-
-    // Finally, parse the string. Note that, if `build_string` could accept a raw
-    // " character, the closing delimiter " would never match. When using
-    // `delimited` with a looping parser (like Repeat::fold), be sure that the
-    // loop won't accidentally match your closing delimiter!
+    .fold(String::new, |mut string, fragment| {
+        match fragment {
+            StringFragment::Literal(s) => string.push_str(s),
+            StringFragment::Escape(c) => string.push(c),
+        }
+        string
+    });
     delimited('"', build_string, '"').parse_next(input)
-}
-
-pub fn parse_char<'a, E>(input: &mut &'a str) -> PResult<char, E>
-where
-    E: ParserError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
-{
-    let build_char = winnow::combinator::alt((parse_plain_char, parse_escape));
-
-    delimited('\'', build_char, '\'').parse_next(input)
 }
 
 #[cfg(test)]
 mod test {
-    use winnow::error::ContextError;
+    use crate::{character, string};
 
     #[test]
     fn test_parse_string() {
         let mut input = r#""Hello, world!""#;
-        let result = super::parse_string::<ContextError>(&mut input);
+        let result = string(&mut input);
         assert_eq!(result, Ok("Hello, world!".to_string()));
         assert_eq!(input, "");
         let mut input_with_emoji = r#""Hello, 🌍!""#;
-        let result = super::parse_string::<ContextError>(&mut input_with_emoji);
+        let result = string(&mut input_with_emoji);
         assert_eq!(result, Ok("Hello, 🌍!".to_string()));
         let mut input_with_escaped_emoji = r#""Hello, \u{1F30D}!""#;
-        let result = super::parse_string::<ContextError>(&mut input_with_escaped_emoji);
+        let result = string(&mut input_with_escaped_emoji);
         assert_eq!(result, Ok("Hello, 🌍!".to_string()));
     }
 
     #[test]
     fn test_parse_char() {
         let mut input = r#"'a'"#;
-        let result = super::parse_char::<ContextError>(&mut input);
+        let result = character(&mut input);
         assert_eq!(result, Ok('a'));
         assert_eq!(input, "");
         let mut input_with_escaped_char = r#"'\\'"#;
-        let result = super::parse_char::<ContextError>(&mut input_with_escaped_char);
+        let result = character(&mut input_with_escaped_char);
         assert_eq!(result, Ok('\\'));
         assert_eq!(input_with_escaped_char, "");
     }

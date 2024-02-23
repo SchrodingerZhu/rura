@@ -1,6 +1,6 @@
-use crate::{lir::Lir, pass::Pass};
+use crate::pass::Pass;
 
-use super::{Action, DiagnosticPass};
+use super::{default_visit_block, DiagnosticPass};
 
 pub struct ImproperTermination;
 
@@ -11,61 +11,18 @@ impl Pass for ImproperTermination {
 }
 
 impl DiagnosticPass for ImproperTermination {
-    fn visit_function_def<'a>(
+    fn visit_block<'a>(
         &mut self,
-        function: &'a crate::lir::FunctionDef,
-        context: &mut super::DiagnosticAgent<'a>,
-    ) -> Action {
-        if !function.body.is_terminated() {
-            context.add_diagnostic(
+        inner: &'a crate::lir::Block,
+        agent: &mut super::DiagnosticAgent<'a>,
+    ) {
+        if !inner.is_terminated() {
+            agent.add_diagnostic(
                 super::DiagnosticLevel::Error,
-                "function body is improperly terminated",
+                "block is not properly terminated",
             );
         }
-        Action::Continue
-    }
-
-    fn visit_instruction<'a>(
-        &mut self,
-        instruction: &'a crate::lir::Lir,
-        context: &mut super::DiagnosticAgent<'a>,
-    ) -> Action {
-        match instruction {
-            Lir::Closure(inner) => {
-                if !inner.body.is_terminated() {
-                    context.add_diagnostic(
-                        super::DiagnosticLevel::Error,
-                        "closure body is improperly terminated",
-                    );
-                }
-            }
-            Lir::IfThenElse(inner) => {
-                if !inner.then_branch.is_terminated() {
-                    context.add_diagnostic(
-                        super::DiagnosticLevel::Error,
-                        "then block is improperly terminated",
-                    );
-                }
-                if !inner.else_branch.is_terminated() {
-                    context.add_diagnostic(
-                        super::DiagnosticLevel::Error,
-                        "else block is improperly terminated",
-                    );
-                }
-            }
-            Lir::InductiveElimination { eliminator, .. } => {
-                for elim in eliminator.iter() {
-                    if !elim.body.is_terminated() {
-                        context.add_diagnostic(
-                            super::DiagnosticLevel::Error,
-                            "eliminator body is improperly terminated",
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-        Action::Continue
+        default_visit_block(self, inner, agent);
     }
 }
 
@@ -102,8 +59,8 @@ mod test {
                 fn main() -> i32 {
                     %0 = constant 0 : i32;
                     %1 = constant 1 : i32;
-                    %3 = (%0 : i32) -> i32 {
-                        %2 = %0 + %1;
+                    %2 = (%0 : i32) -> i32 {
+                        %3 = %0 + %1;
                     };
                 }
             }

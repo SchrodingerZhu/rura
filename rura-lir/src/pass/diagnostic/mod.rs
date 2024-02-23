@@ -21,10 +21,10 @@ pub enum DiagnosticContext<'a> {
     Module(&'a QualifiedName),
     Function(&'a QualifiedName),
     Instrution(usize),
-    Closure(usize),
-    ThenBlock(usize),
-    ElseBlock(usize),
-    Eliminator(usize, &'a QualifiedName),
+    Closure,
+    ThenBlock,
+    ElseBlock,
+    Eliminator(&'a QualifiedName),
     External(&'a QualifiedName),
     InductiveTypeDef(&'a QualifiedName),
 }
@@ -75,11 +75,11 @@ impl std::fmt::Display for DiagnosticContext<'_> {
             DiagnosticContext::Module(name) => write!(f, "module {}", name),
             DiagnosticContext::Function(name) => write!(f, "function {}", name),
             DiagnosticContext::Instrution(i) => write!(f, "instruction at {}", i),
-            DiagnosticContext::Closure(i) => write!(f, "closure body at {}", i),
-            DiagnosticContext::ThenBlock(i) => write!(f, "then block at {}", i),
-            DiagnosticContext::ElseBlock(i) => write!(f, "else block at {}", i),
-            DiagnosticContext::Eliminator(i, ctor) => {
-                write!(f, "elimination body for {ctor} at {i}")
+            DiagnosticContext::Closure => write!(f, "closure body"),
+            DiagnosticContext::ThenBlock => write!(f, "then block"),
+            DiagnosticContext::ElseBlock => write!(f, "else block"),
+            DiagnosticContext::Eliminator(ctor) => {
+                write!(f, "elimination body for {ctor}")
             }
             DiagnosticContext::External(name) => write!(f, "external {}", name),
             DiagnosticContext::InductiveTypeDef(name) => write!(f, "inductive type {}", name),
@@ -105,126 +105,156 @@ pub fn fmt_diagnostic_messages<'a, W: Write>(
     Ok(())
 }
 
-pub enum Action {
-    Continue,
-    Break,
+pub fn default_visit_function_def<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    function: &'a crate::lir::FunctionDef,
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    agent.push_context(DiagnosticContext::Function(&function.prototype.name));
+    this.visit_block(&function.body, agent);
+    agent.pop_context();
+}
+
+pub fn default_visit_block<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    function: &'a crate::lir::Block,
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    for (i, instr) in function.0.iter().enumerate() {
+        agent.push_context(DiagnosticContext::Instrution(i));
+        match instr {
+            Lir::IfThenElse(inner) => this.visit_if_then_else(inner, agent),
+            Lir::Closure(inner) => this.visit_closure(inner, agent),
+            Lir::InductiveElimination { eliminator, .. } => {
+                this.visit_eliminator(eliminator, agent)
+            }
+            _ => this.visit_normal_instruction(instr, agent),
+        }
+        agent.pop_context();
+    }
+}
+
+pub fn default_visit_if_then_else<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    inner: &'a crate::lir::IfThenElse,
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    agent.push_context(DiagnosticContext::ThenBlock);
+    this.visit_block(&inner.then_branch, agent);
+    agent.pop_context();
+    agent.push_context(DiagnosticContext::ElseBlock);
+    this.visit_block(&inner.else_branch, agent);
+    agent.pop_context();
+}
+
+pub fn default_visit_closure<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    inner: &'a crate::lir::ClosureCreation,
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    agent.push_context(DiagnosticContext::Closure);
+    this.visit_block(&inner.body, agent);
+    agent.pop_context();
+}
+
+pub fn default_visit_eliminator<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    eliminator: &'a [crate::lir::InductiveEliminator],
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    for elim in eliminator.iter() {
+        agent.push_context(DiagnosticContext::Eliminator(&elim.ctor));
+        this.visit_block(&elim.body, agent);
+        agent.pop_context();
+    }
+}
+
+pub fn default_visit_module<'a, S: DiagnosticPass + ?Sized>(
+    this: &mut S,
+    module: &'a Module,
+    agent: &mut DiagnosticAgent<'a>,
+) {
+    agent.push_context(DiagnosticContext::Module(&module.name));
+
+    for def in module.inductive_types.iter() {
+        this.visit_inductive_typedef(def, agent);
+    }
+
+    for external in module.external_functions.iter() {
+        this.visit_external(external, agent);
+    }
+
+    for function in module.functions.iter() {
+        this.visit_function_def(function, agent);
+    }
 }
 
 pub trait DiagnosticPass: Pass {
     fn run_diagnostic<'a>(&mut self, module: &'a Module) -> Box<[Diagnostic<'a>]> {
         let mut agent = DiagnosticAgent::new();
-        agent.push_context(DiagnosticContext::Module(&module.name));
         self.visit_module(module, &mut agent);
-
-        macro_rules! check_action {
-            ($act:expr) => {
-                if matches!($act, Action::Break) {
-                    return agent.into_messages();
-                }
-            };
-            (walk $act:expr) => {
-                if matches!($act, Action::Break) {
-                    return Action::Break;
-                }
-            };
-        }
-
-        for def in module.inductive_types.iter() {
-            agent.push_context(DiagnosticContext::InductiveTypeDef(&def.name));
-            check_action!(self.visit_inductive_type_def(def, &mut agent));
-            agent.pop_context();
-        }
-
-        for external in module.external_functions.iter() {
-            agent.push_context(DiagnosticContext::External(&external.name));
-            check_action!(self.visit_external(external, &mut agent));
-            agent.pop_context();
-        }
-
-        fn walk_instr<'a, S: DiagnosticPass + ?Sized>(
-            pass: &mut S,
-            instrs: &'a [Lir],
-            agent: &mut DiagnosticAgent<'a>,
-        ) -> Action {
-            for (i, instr) in instrs.iter().enumerate() {
-                agent.push_context(DiagnosticContext::Instrution(i));
-                check_action!(walk pass.visit_instruction(instr, agent));
-                match instr {
-                    Lir::IfThenElse(inner) => {
-                        agent.push_context(DiagnosticContext::ThenBlock(i));
-                        check_action!(walk walk_instr(pass, &inner.then_branch.0, agent));
-                        agent.pop_context();
-                        agent.push_context(DiagnosticContext::ElseBlock(i));
-                        check_action!(walk walk_instr(pass, &inner.else_branch.0, agent));
-                        agent.pop_context();
-                    }
-                    Lir::InductiveElimination { eliminator, .. } => {
-                        for elim in eliminator.iter() {
-                            agent.push_context(DiagnosticContext::Eliminator(i, &elim.ctor));
-                            check_action!(walk walk_instr(pass, &elim.body.0, agent));
-                            agent.pop_context();
-                        }
-                    }
-                    Lir::Closure(inner) => {
-                        agent.push_context(DiagnosticContext::Closure(i));
-                        check_action!(walk walk_instr(pass, &inner.body.0, agent));
-                        agent.pop_context();
-                    }
-                    _ => {}
-                }
-                agent.pop_context();
-            }
-            Action::Continue
-        }
-
-        for function in module.functions.iter() {
-            agent.push_context(DiagnosticContext::Function(&function.prototype.name));
-            check_action!(self.visit_function_def(function, &mut agent));
-            check_action!(walk_instr(self, &function.body.0, &mut agent));
-            agent.pop_context();
-        }
-
         agent.into_messages()
     }
 
-    #[allow(unused_variables)]
-    fn visit_module<'a>(
+    fn visit_if_then_else<'a>(
         &mut self,
-        module: &'a Module,
-        context: &mut DiagnosticAgent<'a>,
-    ) -> Action {
-        Action::Continue
+        inner: &'a crate::lir::IfThenElse,
+        agent: &mut DiagnosticAgent<'a>,
+    ) {
+        default_visit_if_then_else(self, inner, agent);
+    }
+
+    fn visit_closure<'a>(
+        &mut self,
+        inner: &'a crate::lir::ClosureCreation,
+        agent: &mut DiagnosticAgent<'a>,
+    ) {
+        default_visit_closure(self, inner, agent);
+    }
+
+    fn visit_eliminator<'a>(
+        &mut self,
+        eliminator: &'a [crate::lir::InductiveEliminator],
+        agent: &mut DiagnosticAgent<'a>,
+    ) {
+        default_visit_eliminator(self, eliminator, agent);
+    }
+
+    fn visit_block<'a>(&mut self, inner: &'a crate::lir::Block, agent: &mut DiagnosticAgent<'a>) {
+        default_visit_block(self, inner, agent);
+    }
+
+    #[allow(unused_variables)]
+    fn visit_module<'a>(&mut self, module: &'a Module, context: &mut DiagnosticAgent<'a>) {
+        default_visit_module(self, module, context);
     }
     #[allow(unused_variables)]
     fn visit_external<'a>(
         &mut self,
         external: &'a FunctionPrototype,
         context: &mut DiagnosticAgent<'a>,
-    ) -> Action {
-        Action::Continue
+    ) {
     }
     #[allow(unused_variables)]
-    fn visit_inductive_type_def<'a>(
+    fn visit_inductive_typedef<'a>(
         &mut self,
         typedef: &'a crate::lir::InductiveTypeDef,
         context: &mut DiagnosticAgent<'a>,
-    ) -> Action {
-        Action::Continue
+    ) {
     }
     #[allow(unused_variables)]
     fn visit_function_def<'a>(
         &mut self,
         function: &'a crate::lir::FunctionDef,
         context: &mut DiagnosticAgent<'a>,
-    ) -> Action {
-        Action::Continue
+    ) {
+        default_visit_function_def(self, function, context);
     }
     #[allow(unused_variables)]
-    fn visit_instruction<'a>(
+    fn visit_normal_instruction<'a>(
         &mut self,
         instruction: &'a crate::lir::Lir,
         context: &mut DiagnosticAgent<'a>,
-    ) -> Action {
-        Action::Continue
+    ) {
     }
 }

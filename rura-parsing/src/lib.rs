@@ -379,6 +379,7 @@ fn escape(input: &mut &str) -> PResult<char> {
             '\\'.value('\\'),
             '/'.value('/'),
             '"'.value('"'),
+            '\''.value('\''),
         )),
     )
     .parse_next(input)

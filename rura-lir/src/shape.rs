@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
 use crate::lir::InductiveTypeDef;
 use crate::types::LirType;
-use crate::StackedHashMap;
+use crate::HashMapProxy;
 use crate::{types::TypeVar, Ident};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -62,21 +62,17 @@ pub enum ShapeError {
 pub fn get_inductive_shape<'a, 'b: 'a, I: ExactSizeIterator<Item = &'b LirType>>(
     inductive: &'b InductiveTypeDef,
     type_params: I,
-    known_type_variable: &'_ StackedHashMap<&'a Ident, &'b LirType>,
+    known_type_variable: &'_ mut HashMap<&'a Ident, &'b LirType>,
 ) -> Result<Shape, ShapeError> {
     if inductive.type_params.len() != type_params.len() {
         return Err(ShapeError::IncompleteInductive);
     }
 
-    let local_map = inductive.type_params.iter().zip(type_params).fold(
-        HashMap::new(),
-        |mut acc, (param, ty)| {
-            acc.insert(param, ty);
-            acc
-        },
-    );
+    let mut known_type_variable = HashMapProxy::new(known_type_variable);
 
-    let known_type_variable = known_type_variable.stack(local_map);
+    for (param, ty) in inductive.type_params.iter().zip(type_params) {
+        known_type_variable.insert(param, ty);
+    }
 
     let mut shapes = inductive
         .ctors
@@ -84,7 +80,7 @@ pub fn get_inductive_shape<'a, 'b: 'a, I: ExactSizeIterator<Item = &'b LirType>>
         .map(|c| {
             c.params
                 .iter()
-                .map(|(_, ty)| get_value_shape(ty, &known_type_variable))
+                .map(|(_, ty)| get_value_shape(ty, known_type_variable.get_inner()))
                 .collect::<Result<Vec<_>, _>>()
         })
         .map(|x| x.map(Vec::into_boxed_slice))
@@ -107,7 +103,7 @@ pub fn get_inductive_shape<'a, 'b: 'a, I: ExactSizeIterator<Item = &'b LirType>>
 
 pub fn get_value_shape<'a, 'b: 'a>(
     ty: &'b LirType,
-    known_type_variable: &'_ StackedHashMap<&'a Ident, &'b LirType>,
+    known_type_variable: &'_ HashMap<&'a Ident, &'b LirType>,
 ) -> Result<Shape, ShapeError> {
     match ty {
         LirType::Primitive(primitive) => match primitive {
@@ -245,7 +241,7 @@ mod test {
             LirType::Primitive(PrimitiveType::I32),
             LirType::Primitive(PrimitiveType::F64),
         ]));
-        let shape = get_value_shape(&ty, &StackedHashMap::new()).unwrap();
+        let shape = get_value_shape(&ty, &HashMap::new()).unwrap();
         assert_eq!(
             shape,
             Shape::Tuple(Box::new([
@@ -272,7 +268,7 @@ mod test {
         let shape_x = get_inductive_shape(
             &ind_type,
             [&LirType::Primitive(PrimitiveType::USize)].into_iter(),
-            &StackedHashMap::new(),
+            &mut HashMap::new(),
         )
         .unwrap();
         let rura_type = LirType::Object(
@@ -280,8 +276,7 @@ mod test {
             Box::new([LirType::Primitive(PrimitiveType::USize)]),
         );
         let shape_y =
-            get_inductive_shape(&ind_type, [&rura_type].into_iter(), &StackedHashMap::new())
-                .unwrap();
+            get_inductive_shape(&ind_type, [&rura_type].into_iter(), &mut HashMap::new()).unwrap();
         println!(
             "shape: {:?}, type: {}",
             shape_y,

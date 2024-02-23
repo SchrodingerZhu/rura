@@ -83,32 +83,52 @@ impl Display for QualifiedName {
     }
 }
 
-#[derive(Clone)]
-pub enum StackedHashMap<'a, K, V> {
-    Nil,
-    Cons(HashMap<K, V>, &'a Self),
+struct Update<K: Hash + Eq + Clone, V> {
+    key: K,
+    old_value: Option<V>,
 }
 
-impl<'a, K: Hash + Eq, V> Default for StackedHashMap<'a, K, V> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct HashMapProxy<'a, K: Hash + Eq + Clone, V> {
+    map: &'a mut HashMap<K, V>,
+    changelog: Vec<Update<K, V>>,
 }
 
-impl<'a, K: Hash + Eq, V> StackedHashMap<'a, K, V> {
-    pub fn new() -> Self {
-        Self::Nil
+impl<'a, K: Hash + Eq + Clone, V> HashMapProxy<'a, K, V> {
+    pub fn new(map: &'a mut HashMap<K, V>) -> Self {
+        Self {
+            map,
+            changelog: Vec::new(),
+        }
     }
-    pub fn stack<'b>(&'a self, map: HashMap<K, V>) -> StackedHashMap<'b, K, V>
+    pub fn insert(&mut self, key: K, value: V) {
+        let old_value = self.map.insert(key.clone(), value);
+        self.changelog.push(Update { key, old_value });
+    }
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
     where
-        'a: 'b,
+        K: Borrow<Q>,
+        Q: Hash + Eq,
     {
-        Self::Cons(map, self)
+        self.map.get(key)
     }
-    pub fn get<Q: Borrow<K>>(&self, key: Q) -> Option<&V> {
-        match self {
-            Self::Nil => None,
-            Self::Cons(map, rest) => map.get(key.borrow()).or_else(|| rest.get(key)),
+
+    pub fn get_inner_mut(&mut self) -> &mut HashMap<K, V> {
+        self.map
+    }
+
+    pub fn get_inner(&self) -> &HashMap<K, V> {
+        self.map
+    }
+}
+
+impl<'a, K: Hash + Eq + Clone, V> Drop for HashMapProxy<'a, K, V> {
+    fn drop(&mut self) {
+        for update in self.changelog.drain(..).rev() {
+            if let Some(old_value) = update.old_value {
+                self.map.insert(update.key.clone(), old_value);
+            } else {
+                self.map.remove(&update.key);
+            }
         }
     }
 }

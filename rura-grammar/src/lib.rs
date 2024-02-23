@@ -6,7 +6,8 @@ use winnow::combinator::{alt, delimited, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_parsing::{
-    expect, identifier, members, optional_type_parameters, skip_space, Constructor, Name,
+    elidable_semicolon, expect, identifier, members, optional_type_parameters, skip_space,
+    Constructor, Name,
 };
 
 #[derive(Clone, Debug)]
@@ -82,9 +83,13 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
         skip_space(identifier::<Name>),
         optional_type_parameters::<Name>,
         "{",
+        alt((
+            inductive_braced_definition,
+            inductive_brace_elided_definition,
+        )),
         "}",
     )
-        .map(|(_, name, types, _, _)| Declaration {
+        .map(|(_, name, types, _, definition, _)| Declaration {
             name,
             parameters: types
                 .into_vec()
@@ -93,14 +98,20 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             return_type: Box::new(Expression::Type),
-            definition: Definition::Undefined, // TODO
+            definition,
         })
-        .context(expect("inductive type declaration"))
+        .context(expect("inductive type"))
         .parse_next(i)
 }
 
 fn inductive_braced_definition(i: &mut &str) -> PResult<Definition<Expression>> {
     delimited("{", inductive_constructors, "}").parse_next(i)
+}
+
+fn inductive_brace_elided_definition(i: &mut &str) -> PResult<Definition<Expression>> {
+    (inductive_constructors, elidable_semicolon)
+        .map(|p| p.0)
+        .parse_next(i)
 }
 
 fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
@@ -112,7 +123,7 @@ fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
 fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, Expression>> {
     (identifier, skip_space(members(expression)))
         .map(|(name, params)| Constructor { name, params })
-        .context(expect("constructor definition"))
+        .context(expect("constructor"))
         .parse_next(i)
 }
 

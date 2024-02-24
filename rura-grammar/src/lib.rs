@@ -49,6 +49,11 @@ pub enum Expression {
     True,
 
     TupleType(Box<[Self]>),
+
+    FunctionType {
+        parameters: Box<[Self]>,
+        return_type: Box<Self>,
+    },
 }
 
 impl Display for Expression {
@@ -62,6 +67,14 @@ impl Display for Expression {
             Expression::False => FALSE,
             Expression::True => TRUE,
             Expression::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
+            Expression::FunctionType {
+                parameters,
+                return_type,
+            } => {
+                write!(f, "fn ")?;
+                fmt_delimited(f, "(", parameters.iter(), ", ", ")")?;
+                return write!(f, " -> {return_type}");
+            }
         })
     }
 }
@@ -144,6 +157,7 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         BOTTOM.map(|_| Expression::BottomType),
         primitive_type.map(Expression::PrimitiveType),
         tuple_type,
+        function_type,
     ))
     .context(expect("type expression"))
     .parse_next(i)
@@ -152,6 +166,21 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
 fn tuple_type(i: &mut &str) -> PResult<Expression> {
     delimited("(", separated(1.., skip_space(type_expression), ","), ")")
         .map(|types: Vec<_>| Expression::TupleType(types.into_boxed_slice()))
+        .parse_next(i)
+}
+
+fn function_type(i: &mut &str) -> PResult<Expression> {
+    (
+        "fn",
+        delimited("(", separated(0.., skip_space(type_expression), ","), ")")
+            .map(|p: Vec<_>| p.into_boxed_slice()),
+        "->",
+        skip_space(type_expression).map(Box::new),
+    )
+        .map(|(_, parameters, _, return_type)| Expression::FunctionType {
+            parameters,
+            return_type,
+        })
         .parse_next(i)
 }
 

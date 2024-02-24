@@ -2,14 +2,16 @@
 
 use std::fmt::{Display, Formatter};
 
-use winnow::combinator::{alt, delimited, repeat, separated};
+use winnow::combinator::{alt, opt, repeat, separated};
+use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable, expect, fmt_delimited, function_type, identifier, members, opt_or_default,
-    primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
-    type_parameters, unique_type, Constructor, Name, PrimitiveType, QualifiedName,
+    braced, elidable, expect, field, fmt_delimited, function_type, identifier, members,
+    opt_or_default, parenthesized, prefixed, primitive_type, qualified_name, reference_type,
+    skip_space, suffixed, tuple_type, type_arguments, type_parameters, unique_type, Constructor,
+    Name, PrimitiveType, QualifiedName,
 };
 
 #[derive(Clone, Debug)]
@@ -18,11 +20,22 @@ struct Parameter<T> {
     typ: Box<T>,
 }
 
+impl<T> From<(Name, T)> for Parameter<T> {
+    fn from(p: (Name, T)) -> Self {
+        let (name, typ) = p;
+        Self {
+            name,
+            typ: Box::new(typ),
+        }
+    }
+}
+
 type Parameters<T> = Box<[Parameter<T>]>;
 
 #[derive(Clone, Debug)]
 struct Declaration<T> {
     name: Name,
+    type_parameters: Parameters<T>,
     parameters: Parameters<T>,
     return_type: Box<T>,
     definition: Definition<T>,
@@ -126,6 +139,14 @@ impl Parameter<Expression> {
             typ: Box::new(Expression::Type),
         }
     }
+
+    fn type_parameters(names: Box<[Name]>) -> Box<[Self]> {
+        names
+            .into_vec()
+            .into_iter()
+            .map(Self::type_parameter)
+            .collect()
+    }
 }
 
 type File = Box<[Declaration<Expression>]>;
@@ -139,7 +160,43 @@ pub fn file(i: &mut &str) -> PResult<File> {
     .parse_next(i)
 }
 
-fn function_declaration(_: &mut &str) -> PResult<Declaration<Expression>> {
+fn elidable_definition<'a, F>(d: F) -> impl Parser<&'a str, Definition<Expression>, ContextError>
+where
+    F: Copy + Parser<&'a str, Definition<Expression>, ContextError>,
+{
+    alt((braced(d), suffixed(d, elidable(";"))))
+}
+
+fn function_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
+    (
+        "fn",
+        skip_space(identifier),
+        opt_or_default(type_parameters).map(Parameter::type_parameters),
+        function_parameters,
+        opt(prefixed("->", skip_space(type_expression)))
+            .map(|t| Box::new(t.unwrap_or(Expression::UnitType))),
+        elidable_definition(function_definition),
+    )
+        .map(
+            |(_, name, type_parameters, parameters, return_type, definition)| Declaration {
+                name,
+                type_parameters,
+                parameters,
+                return_type,
+                definition,
+            },
+        )
+        .context(expect("function"))
+        .parse_next(i)
+}
+
+fn function_parameters(i: &mut &str) -> PResult<Box<[Parameter<Expression>]>> {
+    parenthesized(separated(0.., field(type_expression), ","))
+        .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
+        .parse_next(i)
+}
+
+fn function_definition(i: &mut &str) -> PResult<Definition<Expression>> {
     todo!()
 }
 
@@ -148,32 +205,20 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
         "enum",
         skip_space(identifier),
         opt_or_default(type_parameters),
-        alt((
-            inductive_braced_definition,
-            inductive_brace_elided_definition,
-        )),
+        elidable_definition(inductive_constructors),
     )
         .map(|(_, name, types, definition)| Declaration {
             name,
-            parameters: types
+            type_parameters: types
                 .into_vec()
                 .into_iter()
                 .map(Parameter::type_parameter)
                 .collect(),
+            parameters: Default::default(),
             return_type: Box::new(Expression::Type),
             definition,
         })
         .context(expect("inductive type"))
-        .parse_next(i)
-}
-
-fn inductive_braced_definition(i: &mut &str) -> PResult<Definition<Expression>> {
-    delimited("{", inductive_constructors, "}").parse_next(i)
-}
-
-fn inductive_brace_elided_definition(i: &mut &str) -> PResult<Definition<Expression>> {
-    (inductive_constructors, elidable(";"))
-        .map(|p| p.0)
         .parse_next(i)
 }
 
@@ -201,6 +246,7 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         unique_type(type_expression).map(Expression::UniqueType),
         type_call,
         qualified_name.map(Expression::Variable),
+        parenthesized(type_expression),
     ))
     .context(expect("type expression"))
     .parse_next(i)

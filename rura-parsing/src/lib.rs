@@ -313,6 +313,14 @@ pub fn expect(x: &'static str) -> StrContext {
     StrContext::Expected(StrContextValue::Description(x))
 }
 
+pub fn opt_or_default<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+    O: Default,
+{
+    opt(f).map(|o| o.unwrap_or_default())
+}
+
 pub fn eol_comment(i: &mut &str) -> PResult<()> {
     ("//", till_line_ending).void().parse_next(i)
 }
@@ -358,6 +366,36 @@ where
     delimited(ws_or_comment, inner, ws_or_comment)
 }
 
+pub fn parenthesized<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+{
+    delimited("(", skip_space(f), ")")
+}
+
+pub fn braced<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+{
+    delimited("{", skip_space(f), "}")
+}
+
+pub fn prefixed<'a, P, O, F, T>(prefix: P, f: F) -> impl Parser<&'a str, T, ContextError>
+where
+    P: Parser<&'a str, O, ContextError>,
+    F: Parser<&'a str, T, ContextError>,
+{
+    (prefix, skip_space(f)).map(|p| p.1)
+}
+
+pub fn suffixed<'a, S, O, F, T>(f: F, suffix: S) -> impl Parser<&'a str, T, ContextError>
+where
+    S: Parser<&'a str, O, ContextError>,
+    F: Parser<&'a str, T, ContextError>,
+{
+    (f, skip_space(suffix)).map(|p| p.0)
+}
+
 pub fn identifier<'a, T>(i: &mut &'a str) -> PResult<T>
 where
     T: From<&'a str>,
@@ -367,14 +405,6 @@ where
         .map(|s| T::from(s))
         .context(expect("identifier"))
         .parse_next(i)
-}
-
-pub fn opt_or_default<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
-where
-    F: Parser<&'a str, O, ContextError>,
-    O: Default,
-{
-    opt(f).map(|o| o.unwrap_or_default())
 }
 
 pub fn qualified_name<'a, Identifier, Qualified>(input: &mut &'a str) -> PResult<Qualified>
@@ -520,6 +550,14 @@ pub fn string(input: &mut &str) -> PResult<String> {
         .parse_next(input)
 }
 
+pub fn field<'a, F, I, T>(typ: F) -> impl Parser<&'a str, (I, T), ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+{
+    (identifier::<I>, skip_space(":"), typ).map(|(n, _, t)| (n, t))
+}
+
 pub fn members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
 where
     F: Copy + Parser<&'a str, T, ContextError>,
@@ -536,7 +574,7 @@ where
     I: From<&'a str>,
 {
     let field = (identifier::<I>, skip_space(":"), typ).map(|(n, _, t)| (Member::Named(n), t));
-    delimited("{", separated(1.., skip_space(field), ","), "}")
+    braced(separated(1.., skip_space(field), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("named members"))
 }
@@ -553,7 +591,7 @@ where
             .collect::<Vec<_>>()
             .into_boxed_slice()
     });
-    delimited("(", ty, ")").context(expect("unnamed members"))
+    parenthesized(ty).context(expect("unnamed members"))
 }
 
 pub fn type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
@@ -601,26 +639,22 @@ where
         .context(expect("function type"))
 }
 
-fn prefixed_type<'a, P, O, F, T>(prefix: P, typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
-where
-    P: Parser<&'a str, O, ContextError>,
-    F: Parser<&'a str, T, ContextError>,
-{
-    (prefix, skip_space(typ)).map(|p| Box::new(p.1))
-}
-
 pub fn reference_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
 where
     F: Parser<&'a str, T, ContextError>,
 {
-    prefixed_type("&", typ).context(expect("reference type"))
+    prefixed("&", typ)
+        .map(Box::new)
+        .context(expect("reference type"))
 }
 
 pub fn unique_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
 where
     F: Parser<&'a str, T, ContextError>,
 {
-    prefixed_type("!", typ).context(expect("unique type"))
+    prefixed("!", typ)
+        .map(Box::new)
+        .context(expect("unique type"))
 }
 
 #[cfg(test)]

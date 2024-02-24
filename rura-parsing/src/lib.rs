@@ -468,10 +468,10 @@ pub fn string(input: &mut &str) -> PResult<String> {
 
 pub fn members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
 where
-    F: Clone + Parser<&'a str, T, ContextError>,
+    F: Copy + Parser<&'a str, T, ContextError>,
     I: From<&'a str>,
 {
-    opt(alt((named_members(typ.clone()), unnamed_members(typ))))
+    opt(alt((named_members(typ), unnamed_members(typ))))
         .map(|x| x.unwrap_or_default())
         .context(expect("members"))
 }
@@ -500,6 +500,30 @@ where
             .into_boxed_slice()
     });
     delimited("(", ty, ")").context(expect("unnamed members"))
+}
+
+pub fn tuple_type<'a, F, T, TupleT>(typ: F) -> impl Parser<&'a str, TupleT, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+    TupleT: From<Box<[T]>>,
+{
+    delimited("(", separated(1.., skip_space(typ), ","), ")")
+        .map(|types: Vec<_>| From::from(types.into_boxed_slice()))
+}
+
+pub fn function_type<'a, F, T, FuncT>(typ: F) -> impl Parser<&'a str, FuncT, ContextError>
+where
+    F: Copy + Parser<&'a str, T, ContextError>,
+    FuncT: From<(Box<[T]>, Box<T>)>,
+{
+    (
+        "fn",
+        skip_space(delimited("(", separated(0.., skip_space(typ), ","), ")"))
+            .map(|p: Vec<_>| p.into_boxed_slice()),
+        "->",
+        skip_space(typ).map(Box::new),
+    )
+        .map(|(_, params, _, ret)| From::from((params, ret)))
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use rura_parsing::{fmt_delimited, fmt_separated, Constant, Member};
+use rura_parsing::{fmt_delimited, fmt_separated, keywords, Constant, Member};
 use std::fmt::{Display, Formatter};
 
 use crate::lir::{
@@ -58,38 +58,22 @@ impl Display for PrettyPrint<'_, LirType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.target {
             LirType::Closure(params, ret) => {
-                write!(f, "fn(")?;
-                for (idx, ty) in params.iter().enumerate() {
-                    write!(f, "{}", PrettyPrint::new(ty))?;
-                    if idx + 1 != params.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ") -> {}", PrettyPrint::new(&**ret))
+                write!(f, "fn")?;
+                fmt_delimited(f, "(", params.iter().map(PrettyPrint::new), ", ", ")")?;
+                write!(f, " -> {}", PrettyPrint::new(&**ret))
             }
-            LirType::Primitive(x) => write!(f, "{}", x),
-            LirType::Unit => write!(f, "()"),
-            LirType::Bottom => write!(f, "!"),
+            LirType::Primitive(x) => write!(f, "{x}"),
+            LirType::Unit => f.write_str(keywords::UNIT),
+            LirType::Bottom => f.write_str(keywords::BOTTOM),
             LirType::Object(qn, params) => {
                 write!(f, "{}", qn)?;
                 if !params.is_empty() {
-                    write!(f, "<")?;
-                    for (idx, ty) in params.iter().enumerate() {
-                        write!(f, "{}", PrettyPrint::new(ty))?;
-                        if idx + 1 != params.len() {
-                            write!(f, ", ")?;
-                        }
-                    }
-                    write!(f, ">")?;
+                    fmt_delimited(f, "<", params.iter().map(PrettyPrint::new), ", ", ">")?;
                 }
                 Ok(())
             }
             LirType::Tuple(types) => {
-                write!(f, "(")?;
-                for ty in types.iter() {
-                    write!(f, "{},", PrettyPrint::new(ty))?;
-                }
-                write!(f, ")")
+                fmt_delimited(f, "(", types.iter().map(PrettyPrint::new), ", ", ")")
             }
             LirType::TypeVar(var) => write!(f, "{}", PrettyPrint::new(var)),
             LirType::Hole(ty) => write!(f, "◊{}", PrettyPrint::new(&**ty)),

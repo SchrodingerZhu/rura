@@ -5,8 +5,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    character, expect, identifier, keywords, members, optional_type_parameters, primitive_type,
-    qualified_name, skip_space, string, ws_or_comment, Constant, Member,
+    character, expect, function_type, identifier, keywords, members, optional_type_parameters,
+    primitive_type, qualified_name, skip_space, string, tuple_type, ws_or_comment, Constant,
+    Member,
 };
 
 use crate::lir::{
@@ -37,44 +38,20 @@ fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirTy
         .parse_next(i)
 }
 
-fn parse_closure_type(i: &mut &str) -> PResult<LirType> {
-    let types = separated(0.., skip_space(parse_lir_type), ",");
-    (
-        "fn",
-        skip_space("("),
-        types,
-        skip_space(")"),
-        "->",
-        skip_space(parse_lir_type),
-    )
-        .map(|(_, _, args, _, _, ret)| (args, ret))
-        .map(|(args, ret): (Vec<_>, _)| LirType::Closure(args.into_boxed_slice(), Box::new(ret)))
-        .parse_next(i)
-}
-
 fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
     alt((
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
         primitive_type.map(LirType::Primitive),
-        parse_tuple_type,
+        tuple_type(parse_lir_type),
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
         parse_type_ref,
-        parse_closure_type,
+        function_type(parse_lir_type),
         parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),
     ))
     .context(expect("lir type"))
     .parse_next(i)
-}
-
-fn parse_tuple_type(i: &mut &str) -> PResult<LirType> {
-    let delimited = skip_space(parse_lir_type);
-    let inner = repeat(1.., (delimited, ",").map(|x| x.0));
-    ("(", inner, skip_space(")"))
-        .map(|x| x.1)
-        .map(|inner: Vec<_>| LirType::Tuple(inner.into_boxed_slice()))
-        .parse_next(i)
 }
 
 // for now, only allow simple one-level type vars
@@ -900,7 +877,7 @@ mod test {
 
     #[test]
     fn test_parse_tuple_of_scalars() {
-        let mut input = "(i32,f64,)";
+        let mut input = "(i32,f64)";
         let result = parse_lir_type(&mut input);
         assert_eq!(
             result,

@@ -7,8 +7,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable_semicolon, expect, fmt_delimited, identifier, members, optional_type_parameters,
-    primitive_type, skip_space, Constructor, Name, PrimitiveType,
+    elidable_semicolon, expect, fmt_delimited, function_type, identifier, members,
+    optional_type_parameters, primitive_type, skip_space, tuple_type, Constructor, Name,
+    PrimitiveType,
 };
 
 #[derive(Clone, Debug)]
@@ -56,18 +57,34 @@ pub enum Expression {
     },
 }
 
+impl From<Box<[Self]>> for Expression {
+    fn from(types: Box<[Self]>) -> Self {
+        Self::TupleType(types)
+    }
+}
+
+impl From<(Box<[Self]>, Box<Self>)> for Expression {
+    fn from(f: (Box<[Self]>, Box<Self>)) -> Self {
+        let (parameters, return_type) = f;
+        Self::FunctionType {
+            parameters,
+            return_type,
+        }
+    }
+}
+
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Expression::Type => TYPE,
-            Expression::BottomType => BOTTOM,
-            Expression::UnitType => UNIT,
-            Expression::PrimitiveType(v) => return v.fmt(f),
-            Expression::BoolType => BOOL,
-            Expression::False => FALSE,
-            Expression::True => TRUE,
-            Expression::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
-            Expression::FunctionType {
+            Self::Type => TYPE,
+            Self::BottomType => BOTTOM,
+            Self::UnitType => UNIT,
+            Self::PrimitiveType(v) => return v.fmt(f),
+            Self::BoolType => BOOL,
+            Self::False => FALSE,
+            Self::True => TRUE,
+            Self::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
+            Self::FunctionType {
                 parameters,
                 return_type,
             } => {
@@ -156,32 +173,11 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         UNIT.map(|_| Expression::UnitType),
         BOTTOM.map(|_| Expression::BottomType),
         primitive_type.map(Expression::PrimitiveType),
-        tuple_type,
-        function_type,
+        tuple_type(type_expression),
+        function_type(type_expression),
     ))
     .context(expect("type expression"))
     .parse_next(i)
-}
-
-fn tuple_type(i: &mut &str) -> PResult<Expression> {
-    delimited("(", separated(1.., skip_space(type_expression), ","), ")")
-        .map(|types: Vec<_>| Expression::TupleType(types.into_boxed_slice()))
-        .parse_next(i)
-}
-
-fn function_type(i: &mut &str) -> PResult<Expression> {
-    (
-        "fn",
-        delimited("(", separated(0.., skip_space(type_expression), ","), ")")
-            .map(|p: Vec<_>| p.into_boxed_slice()),
-        "->",
-        skip_space(type_expression).map(Box::new),
-    )
-        .map(|(_, parameters, _, return_type)| Expression::FunctionType {
-            parameters,
-            return_type,
-        })
-        .parse_next(i)
 }
 
 #[cfg(test)]

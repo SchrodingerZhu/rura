@@ -43,3 +43,16 @@ pub enum LirType {
     /// Immutable reference
     Ref(Box<Self>),
 }
+
+impl From<Box<[Self]>> for LirType {
+    fn from(types: Box<[Self]>) -> Self {
+        Self::Tuple(types)
+    }
+}
+
+impl From<(Box<[Self]>, Box<Self>)> for LirType {
+    fn from(f: (Box<[Self]>, Box<Self>)) -> Self {
+        let (params, ret) = f;
+        Self::Closure(params, ret)
+    }
+}

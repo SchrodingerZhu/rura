@@ -7,9 +7,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable, expect, fmt_delimited, function_type, identifier, members, optional_type_parameters,
-    primitive_type, reference_type, skip_space, tuple_type, unique_type, Constructor, Name,
-    PrimitiveType,
+    elidable, expect, fmt_delimited, function_type, identifier, members, opt_or_default,
+    primitive_type, reference_type, skip_space, tuple_type, type_parameters, unique_type,
+    Constructor, Name, PrimitiveType,
 };
 
 #[derive(Clone, Debug)]
@@ -132,7 +132,7 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
     (
         "enum",
         skip_space(identifier),
-        optional_type_parameters,
+        opt_or_default(type_parameters),
         alt((
             inductive_braced_definition,
             inductive_brace_elided_definition,
@@ -144,8 +144,7 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
                 .into_vec()
                 .into_iter()
                 .map(Parameter::type_parameter)
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+                .collect(),
             return_type: Box::new(Expression::Type),
             definition,
         })

@@ -5,9 +5,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    character, expect, function_type, identifier, keywords, members, optional_type_arguments,
-    optional_type_parameters, primitive_type, qualified_name, reference_type, skip_space, string,
-    tuple_type, ws_or_comment, Constant, Member,
+    character, expect, function_type, identifier, keywords, members, opt_or_default,
+    primitive_type, qualified_name, reference_type, skip_space, string, tuple_type, type_arguments,
+    type_parameters, ws_or_comment, Constant, Member,
 };
 
 use crate::lir::{
@@ -25,7 +25,11 @@ fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
 }
 
 fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
-    (qualified_name, optional_type_arguments(parse_lir_type)).parse_next(i)
+    (
+        qualified_name,
+        opt_or_default(type_arguments(parse_lir_type)),
+    )
+        .parse_next(i)
 }
 
 fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
@@ -751,7 +755,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
     (
         "enum",
         skip_space(qualified_name),
-        optional_type_parameters,
+        opt_or_default(type_parameters),
         skip_space(bounds),
         "{",
         ctors,

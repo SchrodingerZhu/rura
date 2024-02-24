@@ -315,6 +315,14 @@ where
         .parse_next(i)
 }
 
+pub fn opt_or_default<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+    O: Default,
+{
+    opt(f).map(|o| o.unwrap_or_default())
+}
+
 pub fn qualified_name<'a, Identifier, Qualified>(input: &mut &'a str) -> PResult<Qualified>
 where
     Identifier: From<&'a str>,
@@ -494,26 +502,22 @@ where
     delimited("(", ty, ")").context(expect("unnamed members"))
 }
 
-pub fn optional_type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
+pub fn type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
 where
     T: From<&'a str>,
 {
-    opt(delimited(
-        "<",
-        separated(1.., skip_space(identifier::<T>), ","),
-        ">",
-    ))
-    .map(|v: Option<Vec<_>>| v.unwrap_or_default().into_boxed_slice())
-    .context(expect("type parameters"))
-    .parse_next(i)
+    delimited("<", separated(1.., skip_space(identifier::<T>), ","), ">")
+        .map(|v: Vec<_>| v.into_boxed_slice())
+        .context(expect("type parameters"))
+        .parse_next(i)
 }
 
-pub fn optional_type_arguments<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
+pub fn type_arguments<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
 where
     F: Parser<&'a str, T, ContextError>,
 {
-    opt(delimited("<", separated(1.., skip_space(typ), ","), ">"))
-        .map(|v: Option<Vec<_>>| v.unwrap_or_default().into_boxed_slice())
+    delimited("<", separated(1.., skip_space(typ), ","), ">")
+        .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type arguments"))
 }
 

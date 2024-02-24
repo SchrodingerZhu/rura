@@ -8,8 +8,8 @@ use winnow::{PResult, Parser};
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
     elidable, expect, fmt_delimited, function_type, identifier, members, opt_or_default,
-    primitive_type, reference_type, skip_space, tuple_type, type_parameters, unique_type,
-    Constructor, Name, PrimitiveType,
+    primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
+    type_parameters, unique_type, Constructor, Name, PrimitiveType, QualifiedName,
 };
 
 #[derive(Clone, Debug)]
@@ -55,12 +55,18 @@ pub enum Expression {
         parameters: Box<[Self]>,
         return_type: Box<Self>,
     },
+    TypeCall {
+        type_callee: Box<Self>,
+        type_arguments: Box<[Self]>,
+    },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
     ReferenceType(Box<Self>),
 
     /// Unique RC type.
     UniqueType(Box<Self>),
+
+    Variable(QualifiedName),
 }
 
 impl From<Box<[Self]>> for Expression {
@@ -98,8 +104,17 @@ impl Display for Expression {
                 fmt_delimited(f, "(", parameters.iter(), ", ", ")")?;
                 return write!(f, " -> {return_type}");
             }
+            Self::TypeCall {
+                type_callee,
+                type_arguments,
+            } => {
+                type_callee.fmt(f)?;
+                write!(f, "::")?;
+                return fmt_delimited(f, "<", type_arguments.iter(), ", ", ">");
+            }
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
+            Self::Variable(n) => return n.fmt(f),
         })
     }
 }
@@ -184,9 +199,20 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         function_type(type_expression),
         reference_type(type_expression).map(Expression::ReferenceType),
         unique_type(type_expression).map(Expression::UniqueType),
+        type_call,
+        qualified_name.map(Expression::Variable),
     ))
     .context(expect("type expression"))
     .parse_next(i)
+}
+
+fn type_call(i: &mut &str) -> PResult<Expression> {
+    (qualified_name, "::", type_arguments(type_expression))
+        .map(|(qn, _, type_arguments)| Expression::TypeCall {
+            type_callee: Box::new(Expression::Variable(qn)),
+            type_arguments,
+        })
+        .parse_next(i)
 }
 
 #[cfg(test)]

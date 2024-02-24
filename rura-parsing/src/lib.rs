@@ -91,6 +91,60 @@ impl Hash for Name {
     }
 }
 
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModuleID {
+    modules: Box<[Name]>,
+}
+
+impl ModuleID {
+    pub fn is_none(&self) -> bool {
+        self.modules.is_empty()
+    }
+}
+
+impl From<Box<[Name]>> for ModuleID {
+    fn from(modules: Box<[Name]>) -> Self {
+        Self { modules }
+    }
+}
+
+impl Display for ModuleID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fmt_separated(f, self.modules.iter(), "::")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QualifiedName {
+    pub module_id: ModuleID,
+    pub name: Name,
+}
+
+impl From<Box<[Name]>> for QualifiedName {
+    fn from(names: Box<[Name]>) -> Self {
+        let l = names.len();
+        let mut modules = Vec::default();
+        for (i, name) in names.into_vec().into_iter().enumerate() {
+            if i + 1 < l {
+                modules.push(name);
+                continue;
+            }
+            return Self {
+                module_id: From::from(modules.into_boxed_slice()),
+                name,
+            };
+        }
+        unreachable!()
+    }
+}
+
+impl Display for QualifiedName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}::{}", self.module_id, self.name)
+    }
+}
+
 pub mod keywords {
     pub const TYPE: &str = "type";
     pub const UNIT: &str = "()";
@@ -552,7 +606,7 @@ where
     P: Parser<&'a str, O, ContextError>,
     F: Parser<&'a str, T, ContextError>,
 {
-    (prefix, typ).map(|p| Box::new(p.1))
+    (prefix, skip_space(typ)).map(|p| Box::new(p.1))
 }
 
 pub fn reference_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>

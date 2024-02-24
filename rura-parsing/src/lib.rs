@@ -276,13 +276,15 @@ fn lws_or_multiline_comment(i: &mut &str) -> PResult<()> {
     repeat(0.., alt((lws1, multiline_comment))).parse_next(i)
 }
 
-pub fn elidable_semicolon(i: &mut &str) -> PResult<()> {
+pub fn elidable<'a, F, O>(end: F) -> impl Parser<&'a str, (), ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+{
     (
         lws_or_multiline_comment,
-        alt(("\n".void(), ";".void(), eol_comment)),
+        alt(("\n".void(), end.void(), eol_comment)),
     )
         .void()
-        .parse_next(i)
 }
 
 pub fn ws_or_comment(i: &mut &str) -> PResult<()> {
@@ -509,6 +511,7 @@ where
 {
     delimited("(", separated(1.., skip_space(typ), ","), ")")
         .map(|types: Vec<_>| From::from(types.into_boxed_slice()))
+        .context(expect("tuple type"))
 }
 
 pub fn function_type<'a, F, T, FuncT>(typ: F) -> impl Parser<&'a str, FuncT, ContextError>
@@ -524,6 +527,29 @@ where
         skip_space(typ).map(Box::new),
     )
         .map(|(_, params, _, ret)| From::from((params, ret)))
+        .context(expect("function type"))
+}
+
+fn prefixed_type<'a, P, O, F, T>(prefix: P, typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
+where
+    P: Parser<&'a str, O, ContextError>,
+    F: Parser<&'a str, T, ContextError>,
+{
+    (prefix, typ).map(|p| Box::new(p.1))
+}
+
+pub fn reference_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+{
+    prefixed_type("&", typ).context(expect("reference type"))
+}
+
+pub fn unique_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+{
+    prefixed_type("!", typ).context(expect("unique type"))
 }
 
 #[cfg(test)]

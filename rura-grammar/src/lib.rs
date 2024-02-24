@@ -7,8 +7,8 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
 use rura_parsing::{
-    elidable_semicolon, expect, fmt_delimited, function_type, identifier, members,
-    optional_type_parameters, primitive_type, skip_space, tuple_type, Constructor, Name,
+    elidable, expect, fmt_delimited, function_type, identifier, members, optional_type_parameters,
+    primitive_type, reference_type, skip_space, tuple_type, unique_type, Constructor, Name,
     PrimitiveType,
 };
 
@@ -55,6 +55,12 @@ pub enum Expression {
         parameters: Box<[Self]>,
         return_type: Box<Self>,
     },
+
+    /// Reference type (refcount-free), statically tracked by the borrow checker.
+    ReferenceType(Box<Self>),
+
+    /// Unique RC type.
+    UniqueType(Box<Self>),
 }
 
 impl From<Box<[Self]>> for Expression {
@@ -92,6 +98,8 @@ impl Display for Expression {
                 fmt_delimited(f, "(", parameters.iter(), ", ", ")")?;
                 return write!(f, " -> {return_type}");
             }
+            Self::ReferenceType(t) => return write!(f, "&{t}"),
+            Self::UniqueType(t) => return write!(f, "!{t}"),
         })
     }
 }
@@ -150,13 +158,13 @@ fn inductive_braced_definition(i: &mut &str) -> PResult<Definition<Expression>> 
 }
 
 fn inductive_brace_elided_definition(i: &mut &str) -> PResult<Definition<Expression>> {
-    (inductive_constructors, elidable_semicolon)
+    (inductive_constructors, elidable(";"))
         .map(|p| p.0)
         .parse_next(i)
 }
 
 fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
-    separated(1.., skip_space(inductive_constructor), ",")
+    separated(1.., skip_space(inductive_constructor), elidable(","))
         .map(|ctors: Vec<_>| Definition::Inductive(ctors.into_boxed_slice()))
         .parse_next(i)
 }
@@ -175,6 +183,8 @@ fn type_expression(i: &mut &str) -> PResult<Expression> {
         primitive_type.map(Expression::PrimitiveType),
         tuple_type(type_expression),
         function_type(type_expression),
+        reference_type(type_expression).map(Expression::ReferenceType),
+        unique_type(type_expression).map(Expression::UniqueType),
     ))
     .context(expect("type expression"))
     .parse_next(i)

@@ -5,9 +5,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    character, expect, function_type, identifier, keywords, members, optional_type_parameters,
-    primitive_type, qualified_name, skip_space, string, tuple_type, ws_or_comment, Constant,
-    Member,
+    character, expect, function_type, identifier, keywords, members, optional_type_arguments,
+    optional_type_parameters, primitive_type, qualified_name, reference_type, skip_space, string,
+    tuple_type, ws_or_comment, Constant, Member,
 };
 
 use crate::lir::{
@@ -24,18 +24,8 @@ fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
         .parse_next(i)
 }
 
-fn parse_type_ref(i: &mut &str) -> PResult<LirType> {
-    ("&", parse_lir_type)
-        .map(|(_, x)| LirType::Ref(Box::new(x)))
-        .parse_next(i)
-}
-
 fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
-    let type_parameters = opt(("<", separated(1.., skip_space(parse_lir_type), ","), ">")
-        .map(|(_, x, _): (_, Vec<_>, _)| x));
-    (qualified_name, ws_or_comment, type_parameters)
-        .map(|(qn, _, type_params)| (qn, type_params.unwrap_or_default().into_boxed_slice()))
-        .parse_next(i)
+    (qualified_name, optional_type_arguments(parse_lir_type)).parse_next(i)
 }
 
 fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
@@ -46,7 +36,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         tuple_type(parse_lir_type),
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
-        parse_type_ref,
+        reference_type(parse_lir_type).map(LirType::Ref),
         function_type(parse_lir_type),
         parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),
     ))

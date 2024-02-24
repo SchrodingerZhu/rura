@@ -326,16 +326,6 @@ where
         .parse_next(input)
 }
 
-pub fn optional_type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
-where
-    T: From<&'a str>,
-{
-    opt(("<", separated(1.., skip_space(identifier::<T>), ","), ">"))
-        .context(expect("type parameters"))
-        .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1))
-        .parse_next(i)
-}
-
 pub fn primitive_type(i: &mut &str) -> PResult<PrimitiveType> {
     let mut dispatch = dispatch! {
         alphanumeric1;
@@ -502,6 +492,29 @@ where
             .into_boxed_slice()
     });
     delimited("(", ty, ")").context(expect("unnamed members"))
+}
+
+pub fn optional_type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
+where
+    T: From<&'a str>,
+{
+    opt(delimited(
+        "<",
+        separated(1.., skip_space(identifier::<T>), ","),
+        ">",
+    ))
+    .map(|v: Option<Vec<_>>| v.unwrap_or_default().into_boxed_slice())
+    .context(expect("type parameters"))
+    .parse_next(i)
+}
+
+pub fn optional_type_arguments<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+{
+    opt(delimited("<", separated(1.., skip_space(typ), ","), ">"))
+        .map(|v: Option<Vec<_>>| v.unwrap_or_default().into_boxed_slice())
+        .context(expect("type arguments"))
 }
 
 pub fn tuple_type<'a, F, T, TupleT>(typ: F) -> impl Parser<&'a str, TupleT, ContextError>

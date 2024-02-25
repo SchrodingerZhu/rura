@@ -682,6 +682,18 @@ where
         .context(expect("type arguments"))
 }
 
+pub fn tuple<'a, F, T>(val: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
+where
+    F: Copy + Parser<&'a str, T, ContextError>,
+{
+    parenthesized(alt((
+        separated(2.., skip_space(val), ","),
+        suffixed(val, ",").map(|v| vec![v]),
+    )))
+    .map(|v| v.into_boxed_slice())
+    .context(expect("tuple"))
+}
+
 pub fn tuple_type<'a, F, T, TupleT>(typ: F) -> impl Parser<&'a str, TupleT, ContextError>
 where
     F: Parser<&'a str, T, ContextError>,

@@ -9,9 +9,9 @@ use winnow::{PResult, Parser};
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
     braced, closure_parameters, constant, elidable, expect, fmt_delimited, function_parameters,
-    function_type, identifier, members, opt_or_default, parenthesized, prefixed, primitive_type,
-    qualified_name, reference_type, skip_space, suffixed, tuple_type, type_arguments,
-    type_parameters, unique_type, Constant, Constructor, Name, PrimitiveType, QualifiedName,
+    function_type, identifier, members, parenthesized, prefixed, primitive_type, qualified_name,
+    reference_type, skip_space, suffixed, tuple, tuple_type, type_arguments, type_parameters,
+    unique_type, Constant, Constructor, Name, PrimitiveType, QualifiedName,
 };
 
 #[derive(Clone, Debug)]
@@ -35,7 +35,7 @@ type Parameters<T> = Box<[Parameter<T>]>;
 #[derive(Clone, Debug)]
 struct Declaration<T> {
     name: Name,
-    type_parameters: Parameters<T>,
+    type_parameters: Option<Parameters<T>>,
     parameters: Parameters<T>,
     return_type: Box<T>,
     definition: Definition<T>,
@@ -60,6 +60,7 @@ pub enum AST {
     Constant(Constant),
 
     TupleType(Box<[Self]>),
+    Tuple(Box<[Self]>),
 
     FunctionType {
         parameters: Box<[Self]>,
@@ -75,9 +76,14 @@ pub enum AST {
     },
     Let {
         name: Name,
-        typ: Box<Option<Self>>,
+        typ: Option<Box<Self>>,
         value: Box<Self>,
         body: Box<Self>,
+    },
+    Call {
+        callee: Box<Self>,
+        type_arguments: Option<Box<[Self]>>,
+        arguments: Box<[Self]>,
     },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
@@ -113,7 +119,9 @@ impl Display for AST {
             Self::UnitType => UNIT,
             Self::PrimitiveType(t) => return t.fmt(f),
             Self::Constant(v) => return v.fmt(f),
-            Self::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
+            Self::TupleType(xs) | Self::Tuple(xs) => {
+                return fmt_delimited(f, "(", xs.iter(), ", ", ")")
+            }
             Self::FunctionType {
                 parameters,
                 return_type,
@@ -141,10 +149,22 @@ impl Display for AST {
                 body,
             } => {
                 write!(f, "let {name}")?;
-                if let Some(typ) = typ.as_ref() {
+                if let Some(typ) = typ {
                     write!(f, ": {typ}")?;
                 }
                 return write!(f, " = {value};\n\t{body}"); // TODO: pretty printing
+            }
+            Self::Call {
+                callee,
+                type_arguments,
+                arguments,
+            } => {
+                callee.fmt(f)?;
+                if let Some(types) = type_arguments {
+                    write!(f, "::")?;
+                    fmt_delimited(f, "<", types.iter(), ", ", ">")?;
+                }
+                return fmt_delimited(f, "(", arguments.iter(), ", ", ")");
             }
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
@@ -192,7 +212,7 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "fn",
         skip_space(identifier),
-        opt_or_default(type_parameters).map(Parameter::type_parameters),
+        opt(type_parameters).map(|ps| ps.map(Parameter::type_parameters)),
         skip_space(function_parameters(type_expression)),
         opt(prefixed("->", skip_space(type_expression)))
             .map(|t| Box::new(t.unwrap_or(AST::UnitType))),
@@ -221,16 +241,12 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "enum",
         skip_space(identifier),
-        opt_or_default(type_parameters),
+        opt(type_parameters),
         elidable_definition(inductive_definition),
     )
         .map(|(_, name, types, definition)| Declaration {
             name,
-            type_parameters: types
-                .into_vec()
-                .into_iter()
-                .map(Parameter::type_parameter)
-                .collect(),
+            type_parameters: types.map(Parameter::type_parameters),
             parameters: Default::default(),
             return_type: Box::new(AST::Type),
             definition,
@@ -262,7 +278,7 @@ fn let_statement(i: &mut &str) -> PResult<AST> {
     (
         "let",
         skip_space(identifier),
-        opt(prefixed(":", skip_space(type_expression))).map(Box::new),
+        opt(prefixed(":", skip_space(type_expression))).map(|t| t.map(Box::new)),
         "=",
         value_expression.map(Box::new),
         elidable(";"),
@@ -285,13 +301,19 @@ fn return_statement(i: &mut &str) -> PResult<AST> {
 }
 
 fn value_expression(i: &mut &str) -> PResult<AST> {
+    alt((closure, call, primary_value_expression))
+        .context(expect("value expression"))
+        .parse_next(i)
+}
+
+fn primary_value_expression(i: &mut &str) -> PResult<AST> {
     alt((
-        closure,
         constant.map(AST::Constant),
         qualified_name.map(AST::Variable),
+        tuple(value_expression).map(AST::Tuple),
         parenthesized(value_expression),
     ))
-    .context(expect("value expression"))
+    .context(expect("primary value expression"))
     .parse_next(i)
 }
 
@@ -301,6 +323,22 @@ fn closure(i: &mut &str) -> PResult<AST> {
         alt((braced(block_statement), value_expression)).map(Box::new),
     )
         .map(|(parameters, body)| AST::Closure { parameters, body })
+        .context(expect("closure"))
+        .parse_next(i)
+}
+
+fn call(i: &mut &str) -> PResult<AST> {
+    (
+        primary_value_expression.map(Box::new),
+        opt(prefixed("::", type_arguments(type_expression))),
+        tuple(value_expression),
+    )
+        .map(|(callee, type_arguments, arguments)| AST::Call {
+            callee,
+            type_arguments,
+            arguments,
+        })
+        .context(expect("function call"))
         .parse_next(i)
 }
 
@@ -327,6 +365,7 @@ fn type_call(i: &mut &str) -> PResult<AST> {
             type_callee: Box::new(AST::Variable(qn)),
             type_arguments,
         })
+        .context(expect("type call"))
         .parse_next(i)
 }
 

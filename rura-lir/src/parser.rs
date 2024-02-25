@@ -5,9 +5,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    expect, function_type, identifier, keywords, members, opt_or_default, primitive_type,
-    qualified_name, reference_type, skip_space, tuple_type, type_arguments, type_parameters,
-    ws_or_comment, Constant, Member,
+    expect, function_type, identifier, keywords, members, opt_or_default, parenthesized,
+    primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
+    type_parameters, ws_or_comment, Constant, Member,
 };
 
 use crate::lir::{
@@ -294,8 +294,7 @@ fn parse_block(i: &mut &str) -> PResult<Block> {
 fn parse_closure_params(i: &mut &str) -> PResult<Box<[(usize, LirType)]>> {
     let param_pair = (parse_operand, skip_space(":"), parse_lir_type).map(|(x, _, y)| (x, y));
     let inner = separated(0.., skip_space(param_pair), ",").map(|x: Vec<_>| x.into_boxed_slice());
-    ("(", inner, ")")
-        .map(|(_, x, _)| x)
+    parenthesized(inner)
         .context(expect("closure parameters"))
         .parse_next(i)
 }

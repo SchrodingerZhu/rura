@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod diagnostic;
 
 pub trait Pass {

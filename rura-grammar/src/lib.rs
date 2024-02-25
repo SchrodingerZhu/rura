@@ -49,7 +49,7 @@ pub enum Definition<T> {
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression {
+pub enum AST {
     Type,
 
     BottomType,
@@ -72,6 +72,12 @@ pub enum Expression {
         type_callee: Box<Self>,
         type_arguments: Box<[Self]>,
     },
+    Let {
+        name: Name,
+        typ: Box<Option<Self>>,
+        value: Box<Self>,
+        body: Box<Self>,
+    },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
     ReferenceType(Box<Self>),
@@ -82,13 +88,13 @@ pub enum Expression {
     Variable(QualifiedName),
 }
 
-impl From<Box<[Self]>> for Expression {
+impl From<Box<[Self]>> for AST {
     fn from(types: Box<[Self]>) -> Self {
         Self::TupleType(types)
     }
 }
 
-impl From<(Box<[Self]>, Box<Self>)> for Expression {
+impl From<(Box<[Self]>, Box<Self>)> for AST {
     fn from(f: (Box<[Self]>, Box<Self>)) -> Self {
         let (parameters, return_type) = f;
         Self::FunctionType {
@@ -98,7 +104,7 @@ impl From<(Box<[Self]>, Box<Self>)> for Expression {
     }
 }
 
-impl Display for Expression {
+impl Display for AST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Type => TYPE,
@@ -117,6 +123,18 @@ impl Display for Expression {
                 fmt_delimited(f, "(", parameters.iter(), ", ", ")")?;
                 return write!(f, " -> {return_type}");
             }
+            Self::Let {
+                name,
+                typ,
+                value,
+                body,
+            } => {
+                write!(f, "let {name}")?;
+                if let Some(typ) = typ.as_ref() {
+                    write!(f, ": {typ}")?;
+                }
+                return write!(f, " = {value};\n\t{body}"); // TODO: pretty printing
+            }
             Self::TypeCall {
                 type_callee,
                 type_arguments,
@@ -132,11 +150,11 @@ impl Display for Expression {
     }
 }
 
-impl Parameter<Expression> {
+impl Parameter<AST> {
     fn type_parameter(name: Name) -> Self {
         Self {
             name,
-            typ: Box::new(Expression::Type),
+            typ: Box::new(AST::Type),
         }
     }
 
@@ -149,7 +167,7 @@ impl Parameter<Expression> {
     }
 }
 
-type File = Box<[Declaration<Expression>]>;
+type File = Box<[Declaration<AST>]>;
 
 pub fn file(i: &mut &str) -> PResult<File> {
     repeat(
@@ -160,21 +178,21 @@ pub fn file(i: &mut &str) -> PResult<File> {
     .parse_next(i)
 }
 
-fn elidable_definition<'a, F>(d: F) -> impl Parser<&'a str, Definition<Expression>, ContextError>
+fn elidable_definition<'a, F>(d: F) -> impl Parser<&'a str, Definition<AST>, ContextError>
 where
-    F: Copy + Parser<&'a str, Definition<Expression>, ContextError>,
+    F: Copy + Parser<&'a str, Definition<AST>, ContextError>,
 {
     alt((braced(d), suffixed(d, elidable(";"))))
 }
 
-fn function_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
+fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "fn",
         skip_space(identifier),
         opt_or_default(type_parameters).map(Parameter::type_parameters),
         function_parameters,
         opt(prefixed("->", skip_space(type_expression)))
-            .map(|t| Box::new(t.unwrap_or(Expression::UnitType))),
+            .map(|t| Box::new(t.unwrap_or(AST::UnitType))),
         elidable_definition(function_definition),
     )
         .map(
@@ -190,22 +208,24 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
         .parse_next(i)
 }
 
-fn function_parameters(i: &mut &str) -> PResult<Box<[Parameter<Expression>]>> {
+fn function_parameters(i: &mut &str) -> PResult<Box<[Parameter<AST>]>> {
     parenthesized(separated(0.., field(type_expression), ","))
         .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
         .parse_next(i)
 }
 
-fn function_definition(i: &mut &str) -> PResult<Definition<Expression>> {
-    todo!()
+fn function_definition(i: &mut &str) -> PResult<Definition<AST>> {
+    block_statement
+        .map(|e| Definition::Function(Box::new(e)))
+        .parse_next(i)
 }
 
-fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
+fn inductive_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "enum",
         skip_space(identifier),
         opt_or_default(type_parameters),
-        elidable_definition(inductive_constructors),
+        elidable_definition(inductive_definition),
     )
         .map(|(_, name, types, definition)| Declaration {
             name,
@@ -215,47 +235,83 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<Expression>> {
                 .map(Parameter::type_parameter)
                 .collect(),
             parameters: Default::default(),
-            return_type: Box::new(Expression::Type),
+            return_type: Box::new(AST::Type),
             definition,
         })
         .context(expect("inductive type"))
         .parse_next(i)
 }
 
-fn inductive_constructors(i: &mut &str) -> PResult<Definition<Expression>> {
+fn inductive_definition(i: &mut &str) -> PResult<Definition<AST>> {
     separated(1.., skip_space(inductive_constructor), elidable(","))
         .map(|ctors: Vec<_>| Definition::Inductive(ctors.into_boxed_slice()))
         .parse_next(i)
 }
 
-fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, Expression>> {
+fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, AST>> {
     (identifier, skip_space(members(type_expression)))
         .map(|(name, params)| Constructor { name, params })
         .context(expect("constructor"))
         .parse_next(i)
 }
 
-fn type_expression(i: &mut &str) -> PResult<Expression> {
+fn block_statement(i: &mut &str) -> PResult<AST> {
+    alt((let_statement, return_statement))
+        .context(expect("block statement"))
+        .parse_next(i)
+}
+
+fn let_statement(i: &mut &str) -> PResult<AST> {
+    (
+        "let",
+        skip_space(identifier),
+        opt(prefixed(":", skip_space(type_expression))).map(Box::new),
+        "=",
+        value_expression.map(Box::new),
+        elidable(";"),
+        block_statement.map(Box::new),
+    )
+        .map(|(_, name, typ, _, value, _, body)| AST::Let {
+            name,
+            typ,
+            value,
+            body,
+        })
+        .context(expect("let statement"))
+        .parse_next(i)
+}
+
+fn return_statement(i: &mut &str) -> PResult<AST> {
+    value_expression
+        .context(expect("return statement"))
+        .parse_next(i)
+}
+
+fn value_expression(i: &mut &str) -> PResult<AST> {
+    todo!()
+}
+
+fn type_expression(i: &mut &str) -> PResult<AST> {
     alt((
-        UNIT.map(|_| Expression::UnitType),
-        BOTTOM.map(|_| Expression::BottomType),
-        primitive_type.map(Expression::PrimitiveType),
+        UNIT.map(|_| AST::UnitType),
+        BOTTOM.map(|_| AST::BottomType),
+        primitive_type.map(AST::PrimitiveType),
         tuple_type(type_expression),
         function_type(type_expression),
-        reference_type(type_expression).map(Expression::ReferenceType),
-        unique_type(type_expression).map(Expression::UniqueType),
+        reference_type(type_expression).map(AST::ReferenceType),
+        unique_type(type_expression).map(AST::UniqueType),
         type_call,
-        qualified_name.map(Expression::Variable),
+        qualified_name.map(AST::Variable),
         parenthesized(type_expression),
     ))
     .context(expect("type expression"))
     .parse_next(i)
 }
 
-fn type_call(i: &mut &str) -> PResult<Expression> {
+fn type_call(i: &mut &str) -> PResult<AST> {
     (qualified_name, "::", type_arguments(type_expression))
-        .map(|(qn, _, type_arguments)| Expression::TypeCall {
-            type_callee: Box::new(Expression::Variable(qn)),
+        .map(|(qn, _, type_arguments)| AST::TypeCall {
+            type_callee: Box::new(AST::Variable(qn)),
             type_arguments,
         })
         .parse_next(i)

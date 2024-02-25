@@ -88,15 +88,29 @@ impl std::fmt::Display for DiagnosticContext<'_> {
     }
 }
 
+#[cfg(feature = "colorful-diagnostic")]
+macro_rules! ansi {
+    ($color:ident, $x:expr) => {
+        ::nu_ansi_term::Color::$color.paint($x)
+    };
+}
+
+#[cfg(not(feature = "colorful-diagnostic"))]
+macro_rules! ansi {
+    ($color:ident, $x:expr) => {
+        $x
+    };
+}
+
 pub fn fmt_diagnostic_messages<'a, W: Write>(
     f: &mut W,
     messages: &'a [Diagnostic<'a>],
 ) -> std::fmt::Result {
     for message in messages {
         match message.level {
-            DiagnosticLevel::Info => write!(f, "[info] ")?,
-            DiagnosticLevel::Warning => write!(f, "[warning] ")?,
-            DiagnosticLevel::Error => write!(f, "[error] ")?,
+            DiagnosticLevel::Info => write!(f, "{} ", ansi!(Green, "[info]"))?,
+            DiagnosticLevel::Warning => write!(f, "{} ", ansi!(Yellow, "[warning]"))?,
+            DiagnosticLevel::Error => write!(f, "{} ", ansi!(Red, "[error]"))?,
         }
         fmt_separated(f, message.context.iter(), " > ")?;
         write!(f, ":\n\t")?;

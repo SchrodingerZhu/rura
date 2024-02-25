@@ -6,12 +6,12 @@ use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
-use rura_parsing::keywords::{BOOL, BOTTOM, FALSE, TRUE, TYPE, UNIT};
+use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
-    braced, elidable, expect, field, fmt_delimited, function_type, identifier, members,
-    opt_or_default, parenthesized, prefixed, primitive_type, qualified_name, reference_type,
-    skip_space, suffixed, tuple_type, type_arguments, type_parameters, unique_type, Constructor,
-    Name, PrimitiveType, QualifiedName,
+    braced, closure_parameters, constant, elidable, expect, fmt_delimited, function_parameters,
+    function_type, identifier, members, opt_or_default, parenthesized, prefixed, primitive_type,
+    qualified_name, reference_type, skip_space, suffixed, tuple_type, type_arguments,
+    type_parameters, unique_type, Constant, Constructor, Name, PrimitiveType, QualifiedName,
 };
 
 #[derive(Clone, Debug)]
@@ -57,16 +57,17 @@ pub enum AST {
     UnitType,
 
     PrimitiveType(PrimitiveType),
-
-    BoolType,
-    False,
-    True,
+    Constant(Constant),
 
     TupleType(Box<[Self]>),
 
     FunctionType {
         parameters: Box<[Self]>,
         return_type: Box<Self>,
+    },
+    Closure {
+        parameters: Box<[Name]>,
+        body: Box<Self>,
     },
     TypeCall {
         type_callee: Box<Self>,
@@ -110,10 +111,8 @@ impl Display for AST {
             Self::Type => TYPE,
             Self::BottomType => BOTTOM,
             Self::UnitType => UNIT,
-            Self::PrimitiveType(v) => return v.fmt(f),
-            Self::BoolType => BOOL,
-            Self::False => FALSE,
-            Self::True => TRUE,
+            Self::PrimitiveType(t) => return t.fmt(f),
+            Self::Constant(v) => return v.fmt(f),
             Self::TupleType(types) => return fmt_delimited(f, "(", types.iter(), ", ", ")"),
             Self::FunctionType {
                 parameters,
@@ -122,6 +121,18 @@ impl Display for AST {
                 write!(f, "fn ")?;
                 fmt_delimited(f, "(", parameters.iter(), ", ", ")")?;
                 return write!(f, " -> {return_type}");
+            }
+            Self::Closure { parameters, body } => {
+                fmt_delimited(f, "|", parameters.iter(), ", ", "|")?;
+                return write!(f, " {{ {body} }}");
+            }
+            Self::TypeCall {
+                type_callee,
+                type_arguments,
+            } => {
+                type_callee.fmt(f)?;
+                write!(f, "::")?;
+                return fmt_delimited(f, "<", type_arguments.iter(), ", ", ">");
             }
             Self::Let {
                 name,
@@ -134,14 +145,6 @@ impl Display for AST {
                     write!(f, ": {typ}")?;
                 }
                 return write!(f, " = {value};\n\t{body}"); // TODO: pretty printing
-            }
-            Self::TypeCall {
-                type_callee,
-                type_arguments,
-            } => {
-                type_callee.fmt(f)?;
-                write!(f, "::")?;
-                return fmt_delimited(f, "<", type_arguments.iter(), ", ", ">");
             }
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
@@ -182,7 +185,7 @@ fn elidable_definition<'a, F>(d: F) -> impl Parser<&'a str, Definition<AST>, Con
 where
     F: Copy + Parser<&'a str, Definition<AST>, ContextError>,
 {
-    alt((braced(d), suffixed(d, elidable(";"))))
+    skip_space(alt((braced(d), suffixed(d, elidable(";")))))
 }
 
 fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
@@ -190,7 +193,7 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         "fn",
         skip_space(identifier),
         opt_or_default(type_parameters).map(Parameter::type_parameters),
-        function_parameters,
+        skip_space(function_parameters(type_expression)),
         opt(prefixed("->", skip_space(type_expression)))
             .map(|t| Box::new(t.unwrap_or(AST::UnitType))),
         elidable_definition(function_definition),
@@ -205,12 +208,6 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
             },
         )
         .context(expect("function"))
-        .parse_next(i)
-}
-
-fn function_parameters(i: &mut &str) -> PResult<Box<[Parameter<AST>]>> {
-    parenthesized(separated(0.., field(type_expression), ","))
-        .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
         .parse_next(i)
 }
 
@@ -288,7 +285,23 @@ fn return_statement(i: &mut &str) -> PResult<AST> {
 }
 
 fn value_expression(i: &mut &str) -> PResult<AST> {
-    todo!()
+    alt((
+        closure,
+        constant.map(AST::Constant),
+        qualified_name.map(AST::Variable),
+        parenthesized(value_expression),
+    ))
+    .context(expect("value expression"))
+    .parse_next(i)
+}
+
+fn closure(i: &mut &str) -> PResult<AST> {
+    (
+        closure_parameters,
+        alt((braced(block_statement), value_expression)).map(Box::new),
+    )
+        .map(|(parameters, body)| AST::Closure { parameters, body })
+        .parse_next(i)
 }
 
 fn type_expression(i: &mut &str) -> PResult<AST> {

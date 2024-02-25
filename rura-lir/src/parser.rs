@@ -5,9 +5,9 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    character, expect, function_type, identifier, keywords, members, opt_or_default,
-    primitive_type, qualified_name, reference_type, skip_space, string, tuple_type, type_arguments,
-    type_parameters, ws_or_comment, Constant, Member,
+    expect, function_type, identifier, keywords, members, opt_or_default, primitive_type,
+    qualified_name, reference_type, skip_space, tuple_type, type_arguments, type_parameters,
+    ws_or_comment, Constant, Member,
 };
 
 use crate::lir::{
@@ -74,18 +74,6 @@ fn parse_operand(i: &mut &str) -> PResult<usize> {
         .parse_next(i)
 }
 
-fn parse_typed_char(i: &mut &str) -> PResult<Constant> {
-    (character, skip_space(":"), skip_space(keywords::CHAR))
-        .map(|(c, _, _)| Constant::Char(c))
-        .parse_next(i)
-}
-
-fn parse_typed_literal(i: &mut &str) -> PResult<Constant> {
-    (string, skip_space(":"), skip_space(keywords::STR))
-        .map(|(c, _, _)| Constant::Literal(c))
-        .parse_next(i)
-}
-
 macro_rules! parse_typed_value {
     ($name:ident $parser:ident $kw:ident) => {
         fn $name(i: &mut &str) -> PResult<Constant> {
@@ -100,6 +88,7 @@ macro_rules! parse_typed_value {
     };
 }
 
+parse_typed_value!(parse_typed_char character CHAR);
 parse_typed_value!(parse_typed_bool boolean BOOL);
 parse_typed_value!(parse_typed_f32 f32 F32);
 parse_typed_value!(parse_typed_f64 f64 F64);
@@ -115,6 +104,7 @@ parse_typed_value!(parse_typed_u32 u32 U32);
 parse_typed_value!(parse_typed_u64 u64 U64);
 parse_typed_value!(parse_typed_u128 u128 U128);
 parse_typed_value!(parse_typed_usize usize USIZE);
+parse_typed_value!(parse_typed_literal string STR);
 
 fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
     let inner = alt((

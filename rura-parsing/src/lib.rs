@@ -192,6 +192,30 @@ pub enum Constant {
     Literal(String),
 }
 
+impl Display for Constant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constant::I8(v) => v.fmt(f),
+            Constant::I16(v) => v.fmt(f),
+            Constant::I32(v) => v.fmt(f),
+            Constant::I64(v) => v.fmt(f),
+            Constant::ISize(v) => v.fmt(f),
+            Constant::I128(v) => v.fmt(f),
+            Constant::U8(v) => v.fmt(f),
+            Constant::U16(v) => v.fmt(f),
+            Constant::U32(v) => v.fmt(f),
+            Constant::U64(v) => v.fmt(f),
+            Constant::USize(v) => v.fmt(f),
+            Constant::U128(v) => v.fmt(f),
+            Constant::F32(v) => v.fmt(f),
+            Constant::F64(v) => v.fmt(f),
+            Constant::Bool(v) => v.fmt(f),
+            Constant::Char(c) => write!(f, "'{c}'"),
+            Constant::Literal(s) => write!(f, "\"{s}\""),
+        }
+    }
+}
+
 impl PartialEq for Constant {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -380,6 +404,20 @@ where
     delimited("{", skip_space(f), "}")
 }
 
+pub fn bracketed<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+{
+    delimited("<", skip_space(f), ">")
+}
+
+pub fn piped<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+where
+    F: Parser<&'a str, O, ContextError>,
+{
+    delimited("|", skip_space(f), "|")
+}
+
 pub fn prefixed<'a, P, O, F, T>(prefix: P, f: F) -> impl Parser<&'a str, T, ContextError>
 where
     P: Parser<&'a str, O, ContextError>,
@@ -483,8 +521,9 @@ number!(unsigned u64 U64);
 number!(unsigned u128 U128);
 number!(unsigned usize USize);
 
-pub fn character(input: &mut &str) -> PResult<char> {
+pub fn character(input: &mut &str) -> PResult<Constant> {
     delimited('\'', alt((plain_char, escape)), '\'')
+        .map(Constant::Char)
         .context(expect("character"))
         .parse_next(input)
 }
@@ -530,7 +569,7 @@ fn unicode(input: &mut &str) -> PResult<char> {
     parse_u32.verify_map(char::from_u32).parse_next(input)
 }
 
-pub fn string(input: &mut &str) -> PResult<String> {
+pub fn string(input: &mut &str) -> PResult<Constant> {
     let build_string = repeat(
         0..,
         alt((
@@ -546,8 +585,17 @@ pub fn string(input: &mut &str) -> PResult<String> {
         string
     });
     delimited('"', build_string, '"')
+        .map(Constant::Literal)
         .context(expect("string"))
         .parse_next(input)
+}
+
+pub fn constant(i: &mut &str) -> PResult<Constant> {
+    alt((
+        character, boolean, f32, f64, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128,
+        usize, string,
+    ))
+    .parse_next(i)
 }
 
 pub fn field<'a, F, I, T>(typ: F) -> impl Parser<&'a str, (I, T), ContextError>
@@ -573,10 +621,13 @@ where
     F: Parser<&'a str, T, ContextError>,
     I: From<&'a str>,
 {
-    let field = (identifier::<I>, skip_space(":"), typ).map(|(n, _, t)| (Member::Named(n), t));
-    braced(separated(1.., skip_space(field), ","))
-        .map(|v: Vec<_>| v.into_boxed_slice())
-        .context(expect("named members"))
+    braced(separated(
+        1..,
+        skip_space(field(typ).map(|(n, t)| (Member::Named(n), t))),
+        ",",
+    ))
+    .map(|v: Vec<_>| v.into_boxed_slice())
+    .context(expect("named members"))
 }
 
 fn unnamed_members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
@@ -588,17 +639,35 @@ where
         x.into_iter()
             .enumerate()
             .map(|(idx, ty)| (Member::<I>::Index(idx), ty))
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
+            .collect()
     });
     parenthesized(ty).context(expect("unnamed members"))
+}
+
+pub fn function_parameters<'a, F, I, T, P>(typ: F) -> impl Parser<&'a str, Box<[P]>, ContextError>
+where
+    F: Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+    P: From<(I, T)>,
+{
+    parenthesized(separated(0.., field(typ), ","))
+        .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
+}
+
+pub fn closure_parameters<'a, I>(i: &mut &'a str) -> PResult<Box<[I]>>
+where
+    I: From<&'a str>,
+{
+    piped(separated(0.., identifier, ","))
+        .map(|p: Vec<_>| p.into_boxed_slice())
+        .parse_next(i)
 }
 
 pub fn type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
 where
     T: From<&'a str>,
 {
-    delimited("<", separated(1.., skip_space(identifier::<T>), ","), ">")
+    bracketed(separated(1.., skip_space(identifier::<T>), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type parameters"))
         .parse_next(i)
@@ -608,7 +677,7 @@ pub fn type_arguments<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<[T]>, Contex
 where
     F: Parser<&'a str, T, ContextError>,
 {
-    delimited("<", separated(1.., skip_space(typ), ","), ">")
+    bracketed(separated(1.., skip_space(typ), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type arguments"))
 }
@@ -618,7 +687,7 @@ where
     F: Parser<&'a str, T, ContextError>,
     TupleT: From<Box<[T]>>,
 {
-    delimited("(", separated(1.., skip_space(typ), ","), ")")
+    parenthesized(separated(1.., skip_space(typ), ","))
         .map(|types: Vec<_>| From::from(types.into_boxed_slice()))
         .context(expect("tuple type"))
 }
@@ -630,7 +699,7 @@ where
 {
     (
         "fn",
-        skip_space(delimited("(", separated(0.., skip_space(typ), ","), ")"))
+        skip_space(parenthesized(separated(0.., skip_space(typ), ",")))
             .map(|p: Vec<_>| p.into_boxed_slice()),
         "->",
         skip_space(typ).map(Box::new),

@@ -432,13 +432,15 @@ impl Lir {
             Lir::Unreachable { .. } => box_iter![],
         }
     }
+    /// Get the operands used by the instruction. Notice that `Closure` is special that
+    /// it may capture free variables. Use [`ClosureCreation::free_operands`] to get them.
     pub fn using_operands<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         match self {
             Lir::Apply { closure, arg, .. } => box_iter![*closure, *arg],
             Lir::BinaryOp(inner) => box_iter![inner.lhs, inner.rhs],
             Lir::Call(inner) => box_iter!(@ inner.args.iter().copied()),
             Lir::Clone { value, .. } => box_iter![*value],
-            Lir::Closure(inner) => box_iter!(@ inner.free_operands().into_iter()),
+            Lir::Closure(_) => box_iter![],
             Lir::Drop { value, .. } => box_iter![*value],
             Lir::CtorCall(inner) => box_iter!(@ inner.args.iter().copied()),
             Lir::InductiveElimination { inductive, .. } => box_iter![*inductive],

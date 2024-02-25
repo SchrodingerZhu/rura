@@ -9,7 +9,7 @@ use crate::{
 use super::Pass;
 
 pub mod improper_termination;
-pub mod undefined_variable;
+pub mod variable_definition;
 
 pub enum DiagnosticLevel {
     Info,
@@ -111,9 +111,7 @@ pub fn default_visit_function_def<'a, S: DiagnosticPass + ?Sized>(
     function: &'a crate::lir::FunctionDef,
     agent: &mut DiagnosticAgent<'a>,
 ) {
-    agent.push_context(DiagnosticContext::Function(&function.prototype.name));
     this.visit_block(&function.body, agent);
-    agent.pop_context();
 }
 
 pub fn default_visit_block<'a, S: DiagnosticPass + ?Sized>(
@@ -126,9 +124,10 @@ pub fn default_visit_block<'a, S: DiagnosticPass + ?Sized>(
         match instr {
             Lir::IfThenElse(inner) => this.visit_if_then_else(inner, agent),
             Lir::Closure(inner) => this.visit_closure(inner, agent),
-            Lir::InductiveElimination { eliminator, .. } => {
-                this.visit_eliminator(eliminator, agent)
-            }
+            Lir::InductiveElimination {
+                eliminator,
+                inductive,
+            } => this.visit_eliminator(*inductive, eliminator, agent),
             _ => this.visit_normal_instruction(instr, agent),
         }
         agent.pop_context();
@@ -160,6 +159,7 @@ pub fn default_visit_closure<'a, S: DiagnosticPass + ?Sized>(
 
 pub fn default_visit_eliminator<'a, S: DiagnosticPass + ?Sized>(
     this: &mut S,
+    _inductive: usize,
     eliminator: &'a [crate::lir::InductiveEliminator],
     agent: &mut DiagnosticAgent<'a>,
 ) {
@@ -186,7 +186,9 @@ pub fn default_visit_module<'a, S: DiagnosticPass + ?Sized>(
     }
 
     for function in module.functions.iter() {
+        agent.push_context(DiagnosticContext::Function(&function.prototype.name));
         this.visit_function_def(function, agent);
+        agent.pop_context();
     }
 }
 
@@ -215,10 +217,11 @@ pub trait DiagnosticPass: Pass {
 
     fn visit_eliminator<'a>(
         &mut self,
+        inductive: usize,
         eliminator: &'a [crate::lir::InductiveEliminator],
         agent: &mut DiagnosticAgent<'a>,
     ) {
-        default_visit_eliminator(self, eliminator, agent);
+        default_visit_eliminator(self, inductive, eliminator, agent);
     }
 
     fn visit_block<'a>(&mut self, inner: &'a crate::lir::Block, agent: &mut DiagnosticAgent<'a>) {

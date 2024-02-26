@@ -46,6 +46,23 @@ pub enum LirType {
     Ref(Box<Self>),
 }
 
+impl LirType {
+    pub fn is_materializable(&self) -> bool {
+        match self {
+            LirType::Primitive(_) | LirType::Unit => true,
+            LirType::Closure(a, b) => {
+                a.iter().all(Self::is_materializable) && b.is_materializable()
+            }
+            LirType::Bottom => false,
+            LirType::Object(_, params) => params.iter().all(Self::is_materializable),
+            LirType::Tuple(components) => components.iter().all(Self::is_materializable),
+            LirType::TypeVar(_) => true,
+            LirType::Hole(_) => false,
+            LirType::Ref(_) => false,
+        }
+    }
+}
+
 impl From<Box<[Self]>> for LirType {
     fn from(types: Box<[Self]>) -> Self {
         Self::Tuple(types)

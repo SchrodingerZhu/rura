@@ -56,6 +56,9 @@ impl LirVisitor for FreeOperandVisitor {
             .for_each(|x| {
                 self.free.insert(x);
             });
+        instruction
+            .defining_operand()
+            .for_each(|x| self.define_variable(x));
     }
 
     fn visit_if_then_else(&mut self, inner: &crate::lir::IfThenElse, ctx: &mut FakeContext) {
@@ -123,4 +126,34 @@ pub fn get_free_variable(closure: &crate::lir::ClosureCreation) -> HashSet<usize
     let mut visitor = FreeOperandVisitor::new();
     visitor.visit_closure(closure, &mut FakeContext);
     visitor.free
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{lir::Lir, parser::parse_module};
+
+    use super::get_free_variable;
+
+    #[test]
+    fn test_free_variable_analysis() {
+        let mut input = r#"
+            module test {
+                fn test() -> fn (i32, i32) -> i32 {
+                    %0 = constant 991208 : i32;
+                    %1 = (%2 : i32, %3 : i32) -> i32 {
+                        %4 = %2 + %3;
+                        %5 = %4 + %0;
+                        return %5;
+                    };
+                    return %1;
+                }
+            }
+        "#;
+        let module = parse_module(&mut input).unwrap();
+        let Lir::Closure(clsoure) = &module.functions[0].body.0[1] else {
+            panic!("Expected a closure");
+        };
+        let free = get_free_variable(clsoure);
+        assert_eq!(free, [0].iter().cloned().collect());
+    }
 }

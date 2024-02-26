@@ -5,6 +5,7 @@ use quote::quote;
 
 use rura_parsing::{BinOp, Constant, Constructor, Member, UnOp};
 
+use crate::pass::analysis::free_variable::get_free_variable;
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, QualifiedName};
 
@@ -371,7 +372,7 @@ macro_rules! box_iter {
 
 impl ClosureCreation {
     pub fn free_operands(&self) -> Vec<usize> {
-        todo!()
+        get_free_variable(self).into_iter().collect()
     }
 }
 

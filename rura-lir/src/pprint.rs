@@ -10,6 +10,7 @@ use crate::lir::{
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, QualifiedName};
 
+#[derive(Debug, Clone, Copy)]
 pub struct PrettyPrint<'a, T> {
     target: &'a T,
     indent: usize,

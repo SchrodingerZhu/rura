@@ -3,6 +3,7 @@ use std::{any::Any, fmt::Write};
 
 use rura_parsing::QualifiedName;
 
+pub mod free_variable;
 pub mod type_inference;
 
 pub trait AnalysisInfo {

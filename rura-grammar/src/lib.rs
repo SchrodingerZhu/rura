@@ -125,6 +125,10 @@ pub enum AST {
         argument: Box<Self>,
         matchers: Box<[Matcher]>,
     },
+    Access {
+        argument: Box<Self>,
+        name: Name,
+    },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
     ReferenceType(Box<Self>),
@@ -247,6 +251,7 @@ impl Display for AST {
                 }
                 return writeln!(f, "}}");
             }
+            Self::Access { argument, name } => return write!(f, "{argument}.{name}"),
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
             Self::Variable(n) => return n.fmt(f),
@@ -383,6 +388,7 @@ fn value_expression(i: &mut &str) -> PResult<AST> {
         call,
         if_then_else,
         matching,
+        access,
         primary_value_expression,
     ))
     .context(expect("value expression"))
@@ -482,6 +488,21 @@ fn matcher(i: &mut &str) -> PResult<Matcher> {
             body,
         })
         .context(expect("matcher"))
+        .parse_next(i)
+}
+
+fn access(i: &mut &str) -> PResult<AST> {
+    (
+        primary_value_expression,
+        repeat(1.., prefixed(".", identifier::<Name>)),
+    )
+        .map(|(arg, ns): (AST, Vec<_>)| {
+            ns.into_iter().fold(arg, |a, name| AST::Access {
+                argument: Box::new(a),
+                name,
+            })
+        })
+        .context(expect("access expression"))
         .parse_next(i)
 }
 

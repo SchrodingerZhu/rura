@@ -784,13 +784,13 @@ where
     F: Parser<&'a str, T, ContextError>,
     I: From<&'a str>,
 {
-    let ty = separated(1.., skip_space(typ), ",").map(|x: Vec<_>| {
+    parenthesized(separated(1.., skip_space(typ), ",").map(|x: Vec<_>| {
         x.into_iter()
             .enumerate()
-            .map(|(idx, ty)| (Member::<I>::Index(idx), ty))
+            .map(|(idx, ty)| (Member::Index(idx), ty))
             .collect()
-    });
-    parenthesized(ty).context(expect("unnamed members"))
+    }))
+    .context(expect("unnamed members"))
 }
 
 pub fn function_parameters<'a, F, I, T, P>(typ: F) -> impl Parser<&'a str, Box<[P]>, ContextError>

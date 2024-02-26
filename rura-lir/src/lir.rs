@@ -3,7 +3,7 @@ use std::hash::Hash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use rura_parsing::{Constant, Constructor, Member};
+use rura_parsing::{BinOp, Constant, Constructor, Member, UnOp};
 
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, QualifiedName};
@@ -202,32 +202,6 @@ pub struct CtorCall {
     pub result: usize,
     /// Create unique rc instead of normal Rc (should be used for optimization only)
     pub unique_rc: bool,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum UnOp {
-    Neg,
-    Not,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    BitAnd,
-    BitOr,
-    BitXor,
-    Shl,
-    Shr,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    And,
-    Or,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

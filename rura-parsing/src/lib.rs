@@ -315,6 +315,68 @@ impl Display for PrimitiveType {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum UnOp {
+    Neg,
+    Not,
+}
+
+impl Display for UnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            UnOp::Neg => "-",
+            UnOp::Not => "!",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
+            BinOp::Eq => "==",
+            BinOp::Ne => "!=",
+            BinOp::Lt => "<",
+            BinOp::Le => "<=",
+            BinOp::Gt => ">",
+            BinOp::Ge => ">=",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Constructor<Identifier, Type> {
     pub name: Identifier,
@@ -598,6 +660,34 @@ pub fn constant(i: &mut &str) -> PResult<Constant> {
         usize, string,
     ))
     .parse_next(i)
+}
+
+pub fn prefix_op<'a, F, V, T>(
+    prefix: &'static str,
+    op: UnOp,
+    val: F,
+) -> impl Parser<&'a str, T, ContextError>
+where
+    F: Parser<&'a str, V, ContextError>,
+    T: From<(UnOp, Box<V>)>,
+{
+    prefixed(prefix, val.map(Box::new))
+        .map(move |v| From::from((op, v)))
+        .context(expect("prefix operation"))
+}
+
+pub fn infix_op<'a, F, T, V>(
+    infix: &'static str,
+    op: BinOp,
+    val: F,
+) -> impl Parser<&'a str, T, ContextError>
+where
+    F: Copy + Parser<&'a str, V, ContextError>,
+    T: From<(Box<V>, BinOp, Box<V>)>,
+{
+    (val.map(Box::new), skip_space(infix), val.map(Box::new))
+        .map(move |(lhs, _, rhs)| From::from((lhs, op, rhs)))
+        .context(expect("infix operation"))
 }
 
 pub fn field<'a, F, I, T>(typ: F) -> impl Parser<&'a str, (I, T), ContextError>

@@ -7,13 +7,13 @@ use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
     expect, function_type, identifier, keywords, members, opt_or_default, parenthesized,
     primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
-    type_parameters, ws_or_comment, Constant, Member,
+    type_parameters, ws_or_comment, BinOp, Constant, Member, UnOp,
 };
 
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
+    ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
-    InductiveTypeDef, Lir, MakeMutReceiver, Module, RefField, TraitExpr, UnOp, UnaryOp,
+    InductiveTypeDef, Lir, MakeMutReceiver, Module, RefField, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, QualifiedName};
@@ -805,7 +805,7 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_parsing::{eol_comment, PrimitiveType};
+    use rura_parsing::{eol_comment, BinOp, PrimitiveType, UnOp};
     use winnow::ascii::digit0;
 
     use super::*;

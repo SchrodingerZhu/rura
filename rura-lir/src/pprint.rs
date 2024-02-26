@@ -1,8 +1,9 @@
-use rura_parsing::{fmt_delimited, fmt_separated, keywords, Constant, Member};
 use std::fmt::{Display, Formatter};
 
+use rura_parsing::{fmt_delimited, fmt_separated, keywords, Constant, Member};
+
 use crate::lir::{
-    ArithMode, BinOp, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
+    ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
     InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
@@ -107,49 +108,20 @@ impl Display for PrettyPrint<'_, Block> {
     }
 }
 
-impl Display for PrettyPrint<'_, BinOp> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let op = match self.target {
-            BinOp::Add => "+",
-            BinOp::Sub => "-",
-            BinOp::Mul => "*",
-            BinOp::Div => "/",
-            BinOp::Rem => "%",
-            BinOp::BitAnd => "&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
-            BinOp::Shl => "<<",
-            BinOp::Shr => ">>",
-            BinOp::Eq => "==",
-            BinOp::Ne => "!=",
-            BinOp::Lt => "<",
-            BinOp::Le => "<=",
-            BinOp::Gt => ">",
-            BinOp::Ge => ">=",
-            BinOp::And => "&&",
-            BinOp::Or => "||",
-        };
-        write!(f, "{}", op)
-    }
-}
-
 impl Display for PrettyPrint<'_, BinaryOp> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.target.mode.as_ref() {
             None => write!(
                 f,
                 "%{} = %{} {} %{};",
-                self.target.result,
-                self.target.lhs,
-                PrettyPrint::new(&self.target.op),
-                self.target.rhs
+                self.target.result, self.target.lhs, self.target.op, self.target.rhs
             ),
             Some(mode) => write!(
                 f,
                 "%{} = %{} {} %{} {};",
                 self.target.result,
                 self.target.lhs,
-                PrettyPrint::new(&self.target.op),
+                self.target.op,
                 self.target.rhs,
                 PrettyPrint::new(mode)
             ),
@@ -248,12 +220,7 @@ impl Display for PrettyPrint<'_, UnaryOp> {
         write!(
             f,
             "%{} = {}%{};",
-            self.target.result,
-            match self.target.op {
-                crate::lir::UnOp::Neg => "-",
-                crate::lir::UnOp::Not => "!",
-            },
-            self.target.operand
+            self.target.result, self.target.op, self.target.operand
         )
     }
 }
@@ -577,7 +544,7 @@ impl Display for PrettyPrint<'_, Module> {
 mod test {
     use super::*;
     use crate::parser::parse_module;
-    use rura_parsing::PrimitiveType;
+    use rura_parsing::{BinOp, PrimitiveType, UnOp};
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();
@@ -720,13 +687,13 @@ mod test {
     fn test_unary_op_pprint() {
         let unary_op = UnaryOp {
             result: 0,
-            op: crate::lir::UnOp::Neg,
+            op: UnOp::Neg,
             operand: 1,
         };
         assert_lir_eq(&Lir::UnaryOp(Box::new(unary_op)));
         let unary_op = UnaryOp {
             result: 0,
-            op: crate::lir::UnOp::Not,
+            op: UnOp::Not,
             operand: 1,
         };
         assert_lir_eq(&Lir::UnaryOp(Box::new(unary_op)));

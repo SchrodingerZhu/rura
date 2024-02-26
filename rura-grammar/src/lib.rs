@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
+use winnow::ascii::dec_uint;
 use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
@@ -9,9 +10,10 @@ use winnow::{PResult, Parser};
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
     braced, closure_parameters, constant, elidable, expect, fmt_delimited, function_parameters,
-    function_type, identifier, members, parenthesized, prefixed, primitive_type, qualified_name,
-    reference_type, skip_space, suffixed, tuple, tuple_type, type_arguments, type_parameters,
-    unique_type, Constant, Constructor, Name, PrimitiveType, QualifiedName,
+    function_type, identifier, infix_op, members, parenthesized, prefix_op, prefixed,
+    primitive_type, qualified_name, reference_type, skip_space, suffixed, tuple, tuple_type,
+    type_arguments, type_parameters, unique_type, BinOp, Constant, Constructor, Name,
+    PrimitiveType, QualifiedName, UnOp,
 };
 
 #[derive(Clone, Debug)]
@@ -61,6 +63,10 @@ pub enum AST {
 
     TupleType(Box<[Self]>),
     Tuple(Box<[Self]>),
+    Indexing {
+        tuple: Box<Self>,
+        index: usize,
+    },
 
     FunctionType {
         parameters: Box<[Self]>,
@@ -84,6 +90,15 @@ pub enum AST {
         callee: Box<Self>,
         type_arguments: Option<Box<[Self]>>,
         arguments: Box<[Self]>,
+    },
+    UnaryOp {
+        op: UnOp,
+        argument: Box<Self>,
+    },
+    BinaryOp {
+        lhs: Box<Self>,
+        op: BinOp,
+        rhs: Box<Self>,
     },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
@@ -111,6 +126,20 @@ impl From<(Box<[Self]>, Box<Self>)> for AST {
     }
 }
 
+impl From<(UnOp, Box<Self>)> for AST {
+    fn from(v: (UnOp, Box<Self>)) -> Self {
+        let (op, argument) = v;
+        Self::UnaryOp { op, argument }
+    }
+}
+
+impl From<(Box<Self>, BinOp, Box<Self>)> for AST {
+    fn from(v: (Box<Self>, BinOp, Box<Self>)) -> Self {
+        let (lhs, op, rhs) = v;
+        Self::BinaryOp { lhs, op, rhs }
+    }
+}
+
 impl Display for AST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -120,8 +149,9 @@ impl Display for AST {
             Self::PrimitiveType(t) => return t.fmt(f),
             Self::Constant(v) => return v.fmt(f),
             Self::TupleType(xs) | Self::Tuple(xs) => {
-                return fmt_delimited(f, "(", xs.iter(), ", ", ")")
+                return fmt_delimited(f, "(", xs.iter(), ", ", ")");
             }
+            Self::Indexing { tuple, index } => return write!(f, "{tuple}.{index}"),
             Self::FunctionType {
                 parameters,
                 return_type,
@@ -166,6 +196,8 @@ impl Display for AST {
                 }
                 return fmt_delimited(f, "(", arguments.iter(), ", ", ")");
             }
+            Self::UnaryOp { op, argument } => return write!(f, "{op}{argument}"),
+            Self::BinaryOp { lhs, op, rhs } => return write!(f, "{lhs} {op} {rhs}"),
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
             Self::Variable(n) => return n.fmt(f),
@@ -301,19 +333,44 @@ fn return_statement(i: &mut &str) -> PResult<AST> {
 }
 
 fn value_expression(i: &mut &str) -> PResult<AST> {
-    alt((closure, call, primary_value_expression))
-        .context(expect("value expression"))
-        .parse_next(i)
+    alt((
+        unary,
+        binary,
+        closure,
+        indexing,
+        call,
+        primary_value_expression,
+    ))
+    .context(expect("value expression"))
+    .parse_next(i)
 }
 
-fn primary_value_expression(i: &mut &str) -> PResult<AST> {
+fn unary(i: &mut &str) -> PResult<AST> {
     alt((
-        constant.map(AST::Constant),
-        qualified_name.map(AST::Variable),
-        tuple(value_expression).map(AST::Tuple),
-        parenthesized(value_expression),
+        prefix_op("-", UnOp::Neg, value_expression),
+        prefix_op("!", UnOp::Not, value_expression),
     ))
-    .context(expect("primary value expression"))
+    .parse_next(i)
+}
+
+fn binary(i: &mut &str) -> PResult<AST> {
+    alt((
+        infix_op("+", BinOp::Add, value_expression),
+        infix_op("-", BinOp::Sub, value_expression),
+        infix_op("*", BinOp::Mul, value_expression),
+        infix_op("/", BinOp::Div, value_expression),
+        infix_op("%", BinOp::Rem, value_expression),
+        infix_op("==", BinOp::Eq, value_expression),
+        infix_op("!=", BinOp::Ne, value_expression),
+        infix_op("<", BinOp::Lt, value_expression),
+        infix_op("<=", BinOp::Le, value_expression),
+        infix_op(">", BinOp::Gt, value_expression),
+        infix_op(">=", BinOp::Ge, value_expression),
+        infix_op("&&", BinOp::And, value_expression),
+        infix_op("||", BinOp::Or, value_expression),
+        infix_op(">>", BinOp::Shr, value_expression),
+        infix_op("<<", BinOp::Shl, value_expression),
+    ))
     .parse_next(i)
 }
 
@@ -324,6 +381,17 @@ fn closure(i: &mut &str) -> PResult<AST> {
     )
         .map(|(parameters, body)| AST::Closure { parameters, body })
         .context(expect("closure"))
+        .parse_next(i)
+}
+
+fn indexing(i: &mut &str) -> PResult<AST> {
+    (
+        alt((call, primary_value_expression)).map(Box::new),
+        ".",
+        dec_uint,
+    )
+        .map(|(tuple, _, index)| AST::Indexing { tuple, index })
+        .context(expect("indexing"))
         .parse_next(i)
 }
 
@@ -338,10 +406,9 @@ fn call(i: &mut &str) -> PResult<AST> {
             )),
         ),
     )
-        .map(|(callee, many_arguments): (AST, Vec<_>)| {
-            many_arguments
-                .into_iter()
-                .fold(callee, |f, (type_arguments, arguments)| AST::Call {
+        .map(|(f, args): (AST, Vec<_>)| {
+            args.into_iter()
+                .fold(f, |f, (type_arguments, arguments)| AST::Call {
                     callee: Box::new(f),
                     type_arguments,
                     arguments,
@@ -349,6 +416,17 @@ fn call(i: &mut &str) -> PResult<AST> {
         })
         .context(expect("function call"))
         .parse_next(i)
+}
+
+fn primary_value_expression(i: &mut &str) -> PResult<AST> {
+    alt((
+        constant.map(AST::Constant),
+        qualified_name.map(AST::Variable),
+        tuple(value_expression).map(AST::Tuple),
+        parenthesized(value_expression),
+    ))
+    .context(expect("primary value expression"))
+    .parse_next(i)
 }
 
 fn type_expression(i: &mut &str) -> PResult<AST> {

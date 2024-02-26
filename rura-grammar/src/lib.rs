@@ -60,6 +60,22 @@ struct Declaration<T> {
     definition: Definition<T>,
 }
 
+impl Declaration<AST> {
+    fn type_declaration(
+        name: Name,
+        types: Option<Box<[Name]>>,
+        definition: Definition<AST>,
+    ) -> Self {
+        Self {
+            name,
+            type_parameters: types.map(Parameter::type_parameters),
+            parameters: Default::default(),
+            return_type: Box::new(AST::Type),
+            definition,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Definition<T> {
     Undefined,
@@ -329,13 +345,7 @@ fn enum_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         opt(type_parameters),
         elidable_block(enum_definition, ";"),
     )
-        .map(|(_, name, types, definition)| Declaration {
-            name,
-            type_parameters: types.map(Parameter::type_parameters),
-            parameters: Default::default(),
-            return_type: Box::new(AST::Type),
-            definition,
-        })
+        .map(|(_, name, types, def)| Declaration::type_declaration(name, types, def))
         .context(expect("enum declaration"))
         .parse_next(i)
 }
@@ -364,13 +374,7 @@ fn struct_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         opt(type_parameters),
         elidable_block(struct_definition, ";"),
     )
-        .map(|(_, name, types, definition)| Declaration {
-            name,
-            type_parameters: types.map(Parameter::type_parameters),
-            parameters: Default::default(),
-            return_type: Box::new(AST::Type),
-            definition,
-        })
+        .map(|(_, name, types, def)| Declaration::type_declaration(name, types, def))
         .context(expect("struct declaration"))
         .parse_next(i)
 }

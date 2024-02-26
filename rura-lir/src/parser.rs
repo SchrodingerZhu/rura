@@ -90,20 +90,20 @@ macro_rules! parse_typed_value {
 
 parse_typed_value!(parse_typed_char character CHAR);
 parse_typed_value!(parse_typed_bool boolean BOOL);
-parse_typed_value!(parse_typed_f32 f32 F32);
-parse_typed_value!(parse_typed_f64 f64 F64);
-parse_typed_value!(parse_typed_i8 i8 I8);
-parse_typed_value!(parse_typed_i16 i16 I16);
-parse_typed_value!(parse_typed_i32 i32 I32);
-parse_typed_value!(parse_typed_i64 i64 I64);
-parse_typed_value!(parse_typed_i128 i128 I128);
-parse_typed_value!(parse_typed_isize isize ISIZE);
-parse_typed_value!(parse_typed_u8 u8 U8);
-parse_typed_value!(parse_typed_u16 u16 U16);
-parse_typed_value!(parse_typed_u32 u32 U32);
-parse_typed_value!(parse_typed_u64 u64 U64);
-parse_typed_value!(parse_typed_u128 u128 U128);
-parse_typed_value!(parse_typed_usize usize USIZE);
+parse_typed_value!(parse_typed_f32 number_f32 F32);
+parse_typed_value!(parse_typed_f64 number_f64 F64);
+parse_typed_value!(parse_typed_i8 number_i8 I8);
+parse_typed_value!(parse_typed_i16 number_i16 I16);
+parse_typed_value!(parse_typed_i32 number_i32 I32);
+parse_typed_value!(parse_typed_i64 number_i64 I64);
+parse_typed_value!(parse_typed_i128 number_i128 I128);
+parse_typed_value!(parse_typed_isize number_isize ISIZE);
+parse_typed_value!(parse_typed_u8 number_u8 U8);
+parse_typed_value!(parse_typed_u16 number_u16 U16);
+parse_typed_value!(parse_typed_u32 number_u32 U32);
+parse_typed_value!(parse_typed_u64 number_u64 U64);
+parse_typed_value!(parse_typed_u128 number_u128 U128);
+parse_typed_value!(parse_typed_usize number_usize USIZE);
 parse_typed_value!(parse_typed_literal string STR);
 
 fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {

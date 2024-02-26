@@ -526,7 +526,7 @@ where
 {
     (one_of(is_xid_start), take_while(0.., is_xid_continue))
         .recognize()
-        .map(|s| T::from(s))
+        .map(T::from)
         .context(expect("identifier"))
         .parse_next(i)
 }
@@ -577,35 +577,35 @@ pub fn boolean(i: &mut &str) -> PResult<Constant> {
 macro_rules! number {
     (float $name:ident $ctor:ident) => {
         pub fn $name(i: &mut &str) -> PResult<Constant> {
-            float.map(|n| Constant::$ctor(n)).parse_next(i)
+            float.map(Constant::$ctor).parse_next(i)
         }
     };
     (signed $name:ident $ctor:ident) => {
         pub fn $name(i: &mut &str) -> PResult<Constant> {
-            dec_int.map(|n| Constant::$ctor(n)).parse_next(i)
+            dec_int.map(Constant::$ctor).parse_next(i)
         }
     };
     (unsigned $name:ident $ctor:ident) => {
         pub fn $name(i: &mut &str) -> PResult<Constant> {
-            dec_uint.map(|n| Constant::$ctor(n)).parse_next(i)
+            dec_uint.map(Constant::$ctor).parse_next(i)
         }
     };
 }
 
-number!(float f32 F32);
-number!(float f64 F64);
-number!(signed i8 I8);
-number!(signed i16 I16);
-number!(signed i32 I32);
-number!(signed i64 I64);
-number!(signed i128 I128);
-number!(signed isize ISize);
-number!(unsigned u8 U8);
-number!(unsigned u16 U16);
-number!(unsigned u32 U32);
-number!(unsigned u64 U64);
-number!(unsigned u128 U128);
-number!(unsigned usize USize);
+number!(float number_f32 F32);
+number!(float number_f64 F64);
+number!(signed number_i8 I8);
+number!(signed number_i16 I16);
+number!(signed number_i32 I32);
+number!(signed number_i64 I64);
+number!(signed number_i128 I128);
+number!(signed number_isize ISize);
+number!(unsigned number_u8 U8);
+number!(unsigned number_u16 U16);
+number!(unsigned number_u32 U32);
+number!(unsigned number_u64 U64);
+number!(unsigned number_u128 U128);
+number!(unsigned number_usize USize);
 
 pub fn character(input: &mut &str) -> PResult<Constant> {
     delimited('\'', alt((plain_char, escape)), '\'')
@@ -678,8 +678,23 @@ pub fn string(input: &mut &str) -> PResult<Constant> {
 
 pub fn constant(i: &mut &str) -> PResult<Constant> {
     alt((
-        character, boolean, f32, f64, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128,
-        usize, string,
+        character,
+        boolean,
+        number_f32,
+        number_f64,
+        number_i8,
+        number_i16,
+        number_i32,
+        number_i64,
+        number_i128,
+        number_isize,
+        number_u8,
+        number_u16,
+        number_u32,
+        number_u64,
+        number_u128,
+        number_usize,
+        string,
     ))
     .parse_next(i)
 }

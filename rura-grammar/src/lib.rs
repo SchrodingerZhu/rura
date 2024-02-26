@@ -329,14 +329,23 @@ fn closure(i: &mut &str) -> PResult<AST> {
 
 fn call(i: &mut &str) -> PResult<AST> {
     (
-        primary_value_expression.map(Box::new),
-        opt(prefixed("::", type_arguments(type_expression))),
-        tuple(value_expression),
+        primary_value_expression,
+        repeat(
+            1..,
+            skip_space((
+                opt(prefixed("::", type_arguments(type_expression))),
+                tuple(value_expression),
+            )),
+        ),
     )
-        .map(|(callee, type_arguments, arguments)| AST::Call {
-            callee,
-            type_arguments,
-            arguments,
+        .map(|(callee, many_arguments): (AST, Vec<_>)| {
+            many_arguments
+                .into_iter()
+                .fold(callee, |f, (type_arguments, arguments)| AST::Call {
+                    callee: Box::new(f),
+                    type_arguments,
+                    arguments,
+                })
         })
         .context(expect("function call"))
         .parse_next(i)

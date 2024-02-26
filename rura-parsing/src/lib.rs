@@ -498,6 +498,18 @@ where
     (f, skip_space(suffix)).map(|p| p.0)
 }
 
+pub fn infixed<'a, I, O, F, T>(
+    lhs: F,
+    infix: I,
+    rhs: F,
+) -> impl Parser<&'a str, (T, T), ContextError>
+where
+    I: Parser<&'a str, O, ContextError>,
+    F: Parser<&'a str, T, ContextError>,
+{
+    (lhs, skip_space(infix), rhs).map(|(l, _, r)| (l, r))
+}
+
 pub fn identifier<'a, T>(i: &mut &'a str) -> PResult<T>
 where
     T: From<&'a str>,
@@ -676,7 +688,18 @@ where
         .context(expect("prefix operation"))
 }
 
-pub fn infix_op<'a, F, T, V>(
+pub fn unary<'a, F, V, T>(val: F) -> impl Parser<&'a str, T, ContextError>
+where
+    F: Copy + Parser<&'a str, V, ContextError>,
+    T: From<(UnOp, Box<V>)>,
+{
+    alt((
+        prefix_op("-", UnOp::Neg, val),
+        prefix_op("!", UnOp::Not, val),
+    ))
+}
+
+pub fn infix_op<'a, F, V, T>(
     infix: &'static str,
     op: BinOp,
     val: F,
@@ -685,9 +708,33 @@ where
     F: Copy + Parser<&'a str, V, ContextError>,
     T: From<(Box<V>, BinOp, Box<V>)>,
 {
-    (val.map(Box::new), skip_space(infix), val.map(Box::new))
-        .map(move |(lhs, _, rhs)| From::from((lhs, op, rhs)))
+    infixed(val.map(Box::new), infix, val.map(Box::new))
+        .map(move |(lhs, rhs)| From::from((lhs, op, rhs)))
         .context(expect("infix operation"))
+}
+
+pub fn binary<'a, F, V, T>(val: F) -> impl Parser<&'a str, T, ContextError>
+where
+    F: Copy + Parser<&'a str, V, ContextError>,
+    T: From<(Box<V>, BinOp, Box<V>)>,
+{
+    alt((
+        infix_op(">>", BinOp::Shr, val),
+        infix_op("<<", BinOp::Shl, val),
+        infix_op("*", BinOp::Mul, val),
+        infix_op("/", BinOp::Div, val),
+        infix_op("+", BinOp::Add, val),
+        infix_op("-", BinOp::Sub, val),
+        infix_op("%", BinOp::Rem, val),
+        infix_op("==", BinOp::Eq, val),
+        infix_op("!=", BinOp::Ne, val),
+        infix_op("<", BinOp::Lt, val),
+        infix_op("<=", BinOp::Le, val),
+        infix_op(">", BinOp::Gt, val),
+        infix_op(">=", BinOp::Ge, val),
+        infix_op("&&", BinOp::And, val),
+        infix_op("||", BinOp::Or, val),
+    ))
 }
 
 pub fn field<'a, F, I, T>(typ: F) -> impl Parser<&'a str, (I, T), ContextError>

@@ -9,10 +9,10 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
-    braced, closure_parameters, constant, elidable, expect, fmt_delimited, function_parameters,
-    function_type, identifier, infix_op, members, parenthesized, prefix_op, prefixed,
+    binary, braced, closure_parameters, constant, elidable, expect, fmt_delimited,
+    function_parameters, function_type, identifier, members, parenthesized, prefixed,
     primitive_type, qualified_name, reference_type, skip_space, suffixed, tuple, tuple_type,
-    type_arguments, type_parameters, unique_type, BinOp, Constant, Constructor, Name,
+    type_arguments, type_parameters, unary, unique_type, BinOp, Constant, Constructor, Name,
     PrimitiveType, QualifiedName, UnOp,
 };
 
@@ -334,43 +334,14 @@ fn return_statement(i: &mut &str) -> PResult<AST> {
 
 fn value_expression(i: &mut &str) -> PResult<AST> {
     alt((
-        unary,
-        binary,
+        unary(value_expression),
+        binary(value_expression),
         closure,
         indexing,
         call,
         primary_value_expression,
     ))
     .context(expect("value expression"))
-    .parse_next(i)
-}
-
-fn unary(i: &mut &str) -> PResult<AST> {
-    alt((
-        prefix_op("-", UnOp::Neg, value_expression),
-        prefix_op("!", UnOp::Not, value_expression),
-    ))
-    .parse_next(i)
-}
-
-fn binary(i: &mut &str) -> PResult<AST> {
-    alt((
-        infix_op("+", BinOp::Add, value_expression),
-        infix_op("-", BinOp::Sub, value_expression),
-        infix_op("*", BinOp::Mul, value_expression),
-        infix_op("/", BinOp::Div, value_expression),
-        infix_op("%", BinOp::Rem, value_expression),
-        infix_op("==", BinOp::Eq, value_expression),
-        infix_op("!=", BinOp::Ne, value_expression),
-        infix_op("<", BinOp::Lt, value_expression),
-        infix_op("<=", BinOp::Le, value_expression),
-        infix_op(">", BinOp::Gt, value_expression),
-        infix_op(">=", BinOp::Ge, value_expression),
-        infix_op("&&", BinOp::And, value_expression),
-        infix_op("||", BinOp::Or, value_expression),
-        infix_op(">>", BinOp::Shr, value_expression),
-        infix_op("<<", BinOp::Shl, value_expression),
-    ))
     .parse_next(i)
 }
 

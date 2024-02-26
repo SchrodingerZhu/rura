@@ -4,14 +4,13 @@ use std::fmt::{Display, Formatter};
 
 use winnow::ascii::dec_uint;
 use winnow::combinator::{alt, opt, repeat, separated};
-use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
-    binary, braced, closure_parameters, constant, elidable, expect, fmt_delimited,
-    function_parameters, function_type, identifier, members, parenthesized, prefixed,
-    primitive_type, qualified_name, reference_type, skip_space, suffixed, tuple, tuple_type,
+    binary, braced, closure_parameters, constant, constructor_parameters, elidable, elidable_block,
+    expect, fmt_delimited, function_parameters, function_type, identifier, members, parenthesized,
+    prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple, tuple_type,
     type_arguments, type_parameters, unary, unique_type, BinOp, Constant, Constructor, Name,
     PrimitiveType, QualifiedName, UnOp,
 };
@@ -29,6 +28,23 @@ impl<T> From<(Name, T)> for Parameter<T> {
             name,
             typ: Box::new(typ),
         }
+    }
+}
+
+impl Parameter<AST> {
+    fn type_parameter(name: Name) -> Self {
+        Self {
+            name,
+            typ: Box::new(AST::Type),
+        }
+    }
+
+    fn type_parameters(names: Box<[Name]>) -> Box<[Self]> {
+        names
+            .into_vec()
+            .into_iter()
+            .map(Self::type_parameter)
+            .collect()
     }
 }
 
@@ -100,6 +116,15 @@ pub enum AST {
         op: BinOp,
         rhs: Box<Self>,
     },
+    IfThenElse {
+        condition: Box<Self>,
+        then_branch: Box<Self>,
+        else_branch: Box<Self>,
+    },
+    Matching {
+        argument: Box<Self>,
+        matchers: Box<[Matcher]>,
+    },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
     ReferenceType(Box<Self>),
@@ -137,6 +162,13 @@ impl From<(Box<Self>, BinOp, Box<Self>)> for AST {
     fn from(v: (Box<Self>, BinOp, Box<Self>)) -> Self {
         let (lhs, op, rhs) = v;
         Self::BinaryOp { lhs, op, rhs }
+    }
+}
+
+impl From<(Box<AST>, Box<[Matcher]>)> for AST {
+    fn from(m: (Box<AST>, Box<[Matcher]>)) -> Self {
+        let (argument, matchers) = m;
+        Self::Matching { argument, matchers }
     }
 }
 
@@ -198,6 +230,23 @@ impl Display for AST {
             }
             Self::UnaryOp { op, argument } => return write!(f, "{op}{argument}"),
             Self::BinaryOp { lhs, op, rhs } => return write!(f, "{lhs} {op} {rhs}"),
+            Self::IfThenElse {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                return write!(
+                    f,
+                    "if {condition} {{ {then_branch} }} else {{ {else_branch} }}" // TODO: pretty printing
+                );
+            }
+            Self::Matching { argument, matchers } => {
+                writeln!(f, "match {argument} {{")?;
+                for m in matchers.as_ref() {
+                    writeln!(f, "\t{m}")?;
+                }
+                return writeln!(f, "}}");
+            }
             Self::ReferenceType(t) => return write!(f, "&{t}"),
             Self::UniqueType(t) => return write!(f, "!{t}"),
             Self::Variable(n) => return n.fmt(f),
@@ -205,20 +254,20 @@ impl Display for AST {
     }
 }
 
-impl Parameter<AST> {
-    fn type_parameter(name: Name) -> Self {
-        Self {
-            name,
-            typ: Box::new(AST::Type),
-        }
-    }
+#[derive(Clone, Debug)]
+struct Matcher {
+    constructor: QualifiedName,
+    arguments: Option<Box<[Name]>>,
+    body: AST,
+}
 
-    fn type_parameters(names: Box<[Name]>) -> Box<[Self]> {
-        names
-            .into_vec()
-            .into_iter()
-            .map(Self::type_parameter)
-            .collect()
+impl Display for Matcher {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.constructor)?;
+        if let Some(args) = &self.arguments {
+            fmt_delimited(f, "(", args.iter(), ", ", ")")?;
+        }
+        write!(f, " => {{ {} }}", self.body)
     }
 }
 
@@ -233,13 +282,6 @@ pub fn file(i: &mut &str) -> PResult<File> {
     .parse_next(i)
 }
 
-fn elidable_definition<'a, F>(d: F) -> impl Parser<&'a str, Definition<AST>, ContextError>
-where
-    F: Copy + Parser<&'a str, Definition<AST>, ContextError>,
-{
-    skip_space(alt((braced(d), suffixed(d, elidable(";")))))
-}
-
 fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "fn",
@@ -248,7 +290,7 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         skip_space(function_parameters(type_expression)),
         opt(prefixed("->", skip_space(type_expression)))
             .map(|t| Box::new(t.unwrap_or(AST::UnitType))),
-        elidable_definition(function_definition),
+        elidable_block(function_definition, ";"),
     )
         .map(
             |(_, name, type_parameters, parameters, return_type, definition)| Declaration {
@@ -274,7 +316,7 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         "enum",
         skip_space(identifier),
         opt(type_parameters),
-        elidable_definition(inductive_definition),
+        elidable_block(inductive_definition, ";"),
     )
         .map(|(_, name, types, definition)| Declaration {
             name,
@@ -339,6 +381,8 @@ fn value_expression(i: &mut &str) -> PResult<AST> {
         closure,
         indexing,
         call,
+        if_then_else,
+        matching,
         primary_value_expression,
     ))
     .context(expect("value expression"))
@@ -351,7 +395,7 @@ fn closure(i: &mut &str) -> PResult<AST> {
         alt((braced(block_statement), value_expression)).map(Box::new),
     )
         .map(|(parameters, body)| AST::Closure { parameters, body })
-        .context(expect("closure"))
+        .context(expect("closure expression"))
         .parse_next(i)
 }
 
@@ -362,7 +406,7 @@ fn indexing(i: &mut &str) -> PResult<AST> {
         dec_uint,
     )
         .map(|(tuple, _, index)| AST::Indexing { tuple, index })
-        .context(expect("indexing"))
+        .context(expect("tuple indexing expression"))
         .parse_next(i)
 }
 
@@ -386,6 +430,58 @@ fn call(i: &mut &str) -> PResult<AST> {
                 })
         })
         .context(expect("function call"))
+        .parse_next(i)
+}
+
+fn if_then_else(i: &mut &str) -> PResult<AST> {
+    (
+        "if",
+        skip_space(value_expression).map(Box::new),
+        skip_space(block_statement).map(Box::new),
+        "else",
+        skip_space(block_statement).map(Box::new),
+    )
+        .map(
+            |(_, condition, then_branch, _, else_branch)| AST::IfThenElse {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        )
+        .context(expect("if expression"))
+        .parse_next(i)
+}
+
+fn matching(i: &mut &str) -> PResult<AST> {
+    (
+        "match",
+        skip_space(value_expression).map(Box::new),
+        elidable_block(matchers, ";"),
+    )
+        .map(|(_, argument, matchers)| AST::Matching { argument, matchers })
+        .context(expect("match expression"))
+        .parse_next(i)
+}
+
+fn matchers(i: &mut &str) -> PResult<Box<[Matcher]>> {
+    repeat(1.., matcher)
+        .map(|v: Vec<_>| v.into_boxed_slice())
+        .parse_next(i)
+}
+
+fn matcher(i: &mut &str) -> PResult<Matcher> {
+    (
+        skip_space(qualified_name),
+        opt(skip_space(constructor_parameters())),
+        "=>",
+        elidable_block(block_statement, ","),
+    )
+        .map(|(constructor, arguments, _, body)| Matcher {
+            constructor,
+            arguments,
+            body,
+        })
+        .context(expect("matcher"))
         .parse_next(i)
 }
 
@@ -423,7 +519,7 @@ fn type_call(i: &mut &str) -> PResult<AST> {
             type_callee: Box::new(AST::Variable(qn)),
             type_arguments,
         })
-        .context(expect("type call"))
+        .context(expect("type call expression"))
         .parse_next(i)
 }
 

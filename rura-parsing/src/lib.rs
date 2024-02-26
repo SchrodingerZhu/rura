@@ -437,6 +437,16 @@ where
         .void()
 }
 
+pub fn elidable_block<'a, F, T>(
+    val: F,
+    terminator: &'static str,
+) -> impl Parser<&'a str, T, ContextError>
+where
+    F: Copy + Parser<&'a str, T, ContextError>,
+{
+    skip_space(alt((braced(val), suffixed(val, elidable(terminator)))))
+}
+
 pub fn ws_or_comment(i: &mut &str) -> PResult<()> {
     repeat(
         0..,
@@ -791,6 +801,13 @@ where
 {
     parenthesized(separated(0.., field(typ), ","))
         .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
+}
+
+pub fn constructor_parameters<'a, I>() -> impl Parser<&'a str, Box<[I]>, ContextError>
+where
+    I: From<&'a str>,
+{
+    parenthesized(separated(1.., identifier::<I>, ",")).map(|v: Vec<_>| v.into_boxed_slice())
 }
 
 pub fn closure_parameters<'a, I>(i: &mut &'a str) -> PResult<Box<[I]>>

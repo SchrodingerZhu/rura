@@ -1,5 +1,6 @@
 #![allow(unused_variables, dead_code, private_interfaces)] // FIXME
 
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 use winnow::ascii::dec_uint;
@@ -9,10 +10,10 @@ use winnow::{PResult, Parser};
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor_parameters, elidable, elidable_block,
-    expect, fmt_delimited, function_parameters, function_type, identifier, members, parenthesized,
-    prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple, tuple_type,
-    type_arguments, type_parameters, unary, unique_type, BinOp, Constant, Constructor, Name,
-    PrimitiveType, QualifiedName, UnOp,
+    expect, field, fmt_delimited, function_parameters, function_type, identifier, members,
+    parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
+    tuple_type, type_arguments, type_parameters, unary, unique_type, BinOp, Constant, Constructor,
+    Name, PrimitiveType, QualifiedName, UnOp,
 };
 
 #[derive(Clone, Debug)]
@@ -63,7 +64,8 @@ struct Declaration<T> {
 pub enum Definition<T> {
     Undefined,
     Function(Box<T>),
-    Inductive(Box<[Constructor<Name, T>]>),
+    Enum(HashMap<Name, Constructor<Name, T>>),
+    Struct(HashMap<Name, T>),
 }
 
 #[derive(Clone, Debug)]
@@ -281,7 +283,11 @@ type File = Box<[Declaration<AST>]>;
 pub fn file(i: &mut &str) -> PResult<File> {
     repeat(
         0..,
-        skip_space(alt((function_declaration, inductive_declaration))),
+        skip_space(alt((
+            function_declaration,
+            enum_declaration,
+            struct_declaration,
+        ))),
     )
     .map(|f: Vec<_>| f.into_boxed_slice())
     .parse_next(i)
@@ -316,12 +322,12 @@ fn function_definition(i: &mut &str) -> PResult<Definition<AST>> {
         .parse_next(i)
 }
 
-fn inductive_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
+fn enum_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
     (
         "enum",
         skip_space(identifier),
         opt(type_parameters),
-        elidable_block(inductive_definition, ";"),
+        elidable_block(enum_definition, ";"),
     )
         .map(|(_, name, types, definition)| Declaration {
             name,
@@ -330,20 +336,48 @@ fn inductive_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
             return_type: Box::new(AST::Type),
             definition,
         })
-        .context(expect("inductive type"))
+        .context(expect("enum declaration"))
         .parse_next(i)
 }
 
-fn inductive_definition(i: &mut &str) -> PResult<Definition<AST>> {
-    separated(1.., skip_space(inductive_constructor), elidable(","))
-        .map(|ctors: Vec<_>| Definition::Inductive(ctors.into_boxed_slice()))
-        .parse_next(i)
+fn enum_definition(i: &mut &str) -> PResult<Definition<AST>> {
+    separated(
+        1..,
+        skip_space(constructor).map(|ctor| (ctor.name.clone(), ctor)),
+        elidable(","),
+    )
+    .map(|ctors: Vec<_>| Definition::Enum(ctors.into_iter().collect()))
+    .parse_next(i)
 }
 
-fn inductive_constructor(i: &mut &str) -> PResult<Constructor<Name, AST>> {
+fn constructor(i: &mut &str) -> PResult<Constructor<Name, AST>> {
     (identifier, skip_space(members(type_expression)))
         .map(|(name, params)| Constructor { name, params })
         .context(expect("constructor"))
+        .parse_next(i)
+}
+
+fn struct_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
+    (
+        "struct",
+        skip_space(identifier),
+        opt(type_parameters),
+        elidable_block(struct_definition, ";"),
+    )
+        .map(|(_, name, types, definition)| Declaration {
+            name,
+            type_parameters: types.map(Parameter::type_parameters),
+            parameters: Default::default(),
+            return_type: Box::new(AST::Type),
+            definition,
+        })
+        .context(expect("struct declaration"))
+        .parse_next(i)
+}
+
+fn struct_definition(i: &mut &str) -> PResult<Definition<AST>> {
+    separated(1.., skip_space(field(type_expression)), elidable(","))
+        .map(|f: Vec<_>| Definition::Struct(f.into_iter().collect()))
         .parse_next(i)
 }
 

@@ -13,8 +13,8 @@ proc-macro2 = "1.0.78"
 quote = "1.0.35"
 winnow = "0.6.2"
 thiserror = "1.0.57"
-serde_json = "1.0.114"
 nu-ansi-term = { version = "0.50.0", optional = true }
+serde = { version = "1.0.197", features = ["derive"] }
 
 [dependencies.rura-parsing]
 path = "../rura-parsing"

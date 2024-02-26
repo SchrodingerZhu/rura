@@ -268,7 +268,9 @@ impl Hash for Constant {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub enum PrimitiveType {
     I8,
     I16,

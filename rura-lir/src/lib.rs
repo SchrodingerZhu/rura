@@ -14,7 +14,9 @@ pub mod shape;
 pub mod types;
 
 #[repr(transparent)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Ident(Box<str>);
 
 impl From<&str> for Ident {
@@ -42,7 +44,9 @@ impl AsRef<str> for Ident {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct QualifiedName(Box<[Ident]>);
 
 impl QualifiedName {

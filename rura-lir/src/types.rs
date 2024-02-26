@@ -4,7 +4,9 @@ use rura_parsing::PrimitiveType;
 
 use crate::{Ident, QualifiedName};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum TypeVar {
     Plain(Ident),
     Associated(Ident, Ident),
@@ -22,7 +24,7 @@ impl Display for TypeVar {
 }
 
 /// Surface Type is the type without detailed structure
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LirType {
     /// fn (A, B) -> C
     Closure(Box<[Self]>, Box<Self>),

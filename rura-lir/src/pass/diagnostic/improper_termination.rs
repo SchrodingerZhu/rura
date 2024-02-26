@@ -1,6 +1,9 @@
-use crate::pass::Pass;
+use crate::pass::{
+    visitor::{default_visit_block, LirVisitor},
+    Pass,
+};
 
-use super::{default_visit_block, DiagnosticPass};
+use super::DiagnosticPass;
 
 pub struct ImproperTermination;
 
@@ -10,7 +13,8 @@ impl Pass for ImproperTermination {
     }
 }
 
-impl DiagnosticPass for ImproperTermination {
+impl LirVisitor for ImproperTermination {
+    type Context<'a> = super::DiagnosticAgent<'a>;
     fn visit_block<'a>(
         &mut self,
         inner: &'a crate::lir::Block,
@@ -25,6 +29,8 @@ impl DiagnosticPass for ImproperTermination {
         default_visit_block(self, inner, agent);
     }
 }
+
+impl DiagnosticPass<'_> for ImproperTermination {}
 
 #[cfg(test)]
 mod test {

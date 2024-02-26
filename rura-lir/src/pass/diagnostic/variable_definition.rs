@@ -3,9 +3,12 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use crate::pass::Pass;
+use crate::pass::{
+    visitor::{default_visit_block, LirVisitor},
+    Pass,
+};
 
-use super::{default_visit_block, DiagnosticContext, DiagnosticPass};
+use super::{DiagnosticPass, VisitorContext};
 
 #[derive(Default)]
 pub struct VariableDefinition {
@@ -90,7 +93,8 @@ impl VariableDefinition {
     }
 }
 
-impl DiagnosticPass for VariableDefinition {
+impl LirVisitor for VariableDefinition {
+    type Context<'a> = super::DiagnosticAgent<'a>;
     fn visit_function_def<'a>(
         &mut self,
         function: &'a crate::lir::FunctionDef,
@@ -134,12 +138,12 @@ impl DiagnosticPass for VariableDefinition {
                 Error::Undefined(inner.condition),
             );
         }
-        agent.push_context(DiagnosticContext::ThenBlock);
+        agent.push_context(VisitorContext::ThenBlock);
         self.new_scope();
         self.visit_block(&inner.then_branch, agent);
         self.pop_scope();
         agent.pop_context();
-        agent.push_context(DiagnosticContext::ElseBlock);
+        agent.push_context(VisitorContext::ElseBlock);
         self.new_scope();
         self.visit_block(&inner.else_branch, agent);
         self.pop_scope();
@@ -163,7 +167,7 @@ impl DiagnosticPass for VariableDefinition {
             };
         }
         for elim in eliminator.iter() {
-            agent.push_context(DiagnosticContext::Eliminator(&elim.ctor));
+            agent.push_context(VisitorContext::Eliminator(&elim.ctor));
             self.new_scope();
             match &elim.style {
                 crate::lir::EliminationStyle::Unwrap { fields, token } => {
@@ -208,7 +212,7 @@ impl DiagnosticPass for VariableDefinition {
                 }
             }
         }
-        agent.push_context(DiagnosticContext::Closure);
+        agent.push_context(VisitorContext::Closure);
         self.visit_block(&inner.body, agent);
         agent.pop_context();
         self.pop_scope();
@@ -217,6 +221,8 @@ impl DiagnosticPass for VariableDefinition {
         }
     }
 }
+
+impl DiagnosticPass<'_> for VariableDefinition {}
 
 #[cfg(test)]
 mod test {

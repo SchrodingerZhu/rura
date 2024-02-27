@@ -33,9 +33,12 @@ pub enum Error {
     InvalidFunctionArgument(usize, Box<LirType>),
     #[error("%{0} : {} is not a permissible operand for this instruction", PrettyPrint::new(&**.1))]
     InvalidOperand(usize, Box<LirType>),
+    #[error("return value %{0} : {} does not match function signature", PrettyPrint::new(&**.1))]
+    InvalidReturnValue(usize, Box<LirType>),
 }
 
 pub struct TypeInferenceContext<'a> {
+    return_type: &'a LirType,
     type_variables: HashSet<&'a Ident>,
     context: Vec<VisitorContext<'a>>,
     errors: Vec<(VisitorContext<'a>, Error)>,
@@ -43,6 +46,16 @@ pub struct TypeInferenceContext<'a> {
 }
 
 impl<'a> TypeInferenceContext<'a> {
+    pub fn new() -> Self {
+        const UNIT_TYPE: LirType = LirType::Unit;
+        Self {
+            return_type: &UNIT_TYPE,
+            type_variables: HashSet::new(),
+            context: vec![],
+            errors: vec![],
+            current_function: HashMap::new(),
+        }
+    }
     pub fn set_type(&mut self, operand: usize, ty: LirType) {
         self.current_function.insert(operand, ty);
     }
@@ -82,6 +95,13 @@ impl<'a> TypeInferenceContext<'a> {
         self.errors.push((
             self.context.last().unwrap().clone(),
             Error::IncompatibleCapture(closure, operand, Box::new(operand_type.clone())),
+        ));
+    }
+
+    pub fn invalid_return_value(&mut self, operand: usize, operand_type: LirType) {
+        self.errors.push((
+            self.context.last().unwrap().clone(),
+            Error::InvalidReturnValue(operand, Box::new(operand_type)),
         ));
     }
 
@@ -194,17 +214,18 @@ impl LirVisitor for TypeInference {
         function: &'a FunctionDef,
         context: &mut TypeInferenceContext<'a>,
     ) {
+        context.return_type = &function.prototype.return_type;
         // insert all type variables
         context.type_variables = function.prototype.type_params.iter().collect();
         context.check_type_var_in_interface(&function.prototype.return_type);
-        if !function.prototype.return_type.is_materializable() {
+        if !function.prototype.return_type.is_interface_compat() {
             context.invalid_interface_type(function.prototype.return_type.clone());
         }
 
         // insert all arguments as known type
         for (op, ty) in function.prototype.params.iter() {
             context.check_type_var_for_operand(*op, ty);
-            if !ty.is_materializable() {
+            if !ty.is_interface_compat() {
                 context.invalid_interface_type(ty.clone());
             }
             context.current_function.insert(*op, ty.clone());

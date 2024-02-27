@@ -66,6 +66,16 @@ impl LirType {
             LirType::Unique(_) => false,
         }
     }
+    pub fn is_interface_compat(&self) -> bool {
+        if let LirType::Unique(x) = self {
+            x.is_object() && x.is_materializable()
+        } else {
+            self.is_materializable()
+        }
+    }
+    pub fn is_object(&self) -> bool {
+        matches!(self, LirType::Object(_, _))
+    }
 }
 
 impl From<Box<[Self]>> for LirType {

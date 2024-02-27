@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use rura_parsing::PrimitiveType;
+
+use crate::lir::Lir;
 use crate::pass::visitor::default_visit_function_def;
 use crate::pass::visitor::{LirVisitor, TracingContext, VisitorContext};
 use crate::pprint::PrettyPrint;
@@ -29,8 +32,8 @@ pub enum Error {
     UnknownTypeVarInInterface(Box<LirType>),
     #[error("%{0} : {} is not of the required type for function call", PrettyPrint::new(&**.1))]
     InvalidFunctionArgument(usize, Box<LirType>),
-    #[error("%{0} : {} is not callable", PrettyPrint::new(&**.1))]
-    InvalidApplyOperand(usize, Box<LirType>),
+    #[error("%{0} : {} is not a permissible operand for this instruction", PrettyPrint::new(&**.1))]
+    InvalidOperand(usize, Box<LirType>),
 }
 
 pub struct TypeInferenceContext<'a> {
@@ -155,10 +158,10 @@ impl<'a> TypeInferenceContext<'a> {
             Error::InvalidFunctionArgument(operand, Box::new(operand_type)),
         ));
     }
-    fn invalid_apply_operand(&mut self, operand: usize, operand_type: LirType) {
+    fn invalid_operand(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::InvalidApplyOperand(operand, Box::new(operand_type)),
+            Error::InvalidOperand(operand, Box::new(operand_type)),
         ));
     }
 }
@@ -226,7 +229,7 @@ impl LirVisitor for TypeInference {
             } => {
                 let closure_type = get_type!(context, *closure);
                 let LirType::Closure(params, ret) = closure_type else {
-                    context.invalid_apply_operand(*closure, closure_type.clone());
+                    context.invalid_operand(*closure, closure_type.clone());
                     return;
                 };
                 let arg_type = get_type!(context, *arg);
@@ -279,10 +282,41 @@ impl LirVisitor for TypeInference {
             crate::lir::Lir::TupleElim { tuple, eliminator } => todo!(),
             crate::lir::Lir::UnaryOp(_) => todo!(),
             crate::lir::Lir::IfThenElse(_) => unreachable!(),
-            crate::lir::Lir::Constant { value, result } => todo!(),
-            crate::lir::Lir::Fill { hole, value } => todo!(),
+            crate::lir::Lir::Constant { value, result } => {
+                let ty = match **value {
+                    rura_parsing::Constant::I8(_) => PrimitiveType::I8,
+                    rura_parsing::Constant::I16(_) => PrimitiveType::I16,
+                    rura_parsing::Constant::I32(_) => PrimitiveType::I32,
+                    rura_parsing::Constant::I64(_) => PrimitiveType::I64,
+                    rura_parsing::Constant::ISize(_) => PrimitiveType::ISize,
+                    rura_parsing::Constant::I128(_) => PrimitiveType::I128,
+                    rura_parsing::Constant::U8(_) => PrimitiveType::U8,
+                    rura_parsing::Constant::U16(_) => PrimitiveType::U16,
+                    rura_parsing::Constant::U32(_) => PrimitiveType::U32,
+                    rura_parsing::Constant::U64(_) => PrimitiveType::U64,
+                    rura_parsing::Constant::USize(_) => PrimitiveType::USize,
+                    rura_parsing::Constant::U128(_) => PrimitiveType::U128,
+                    rura_parsing::Constant::F32(_) => PrimitiveType::F32,
+                    rura_parsing::Constant::F64(_) => PrimitiveType::F64,
+                    rura_parsing::Constant::Bool(_) => PrimitiveType::Bool,
+                    rura_parsing::Constant::Char(_) => PrimitiveType::Char,
+                    rura_parsing::Constant::Literal(_) => PrimitiveType::Str,
+                };
+                context.set_type(*result, LirType::Primitive(ty));
+            }
+            crate::lir::Lir::Fill { hole, value } => {
+                let hole_type = get_type!(context, *hole);
+                let value_type = get_type!(context, *value);
+                let LirType::Hole(inner) = hole_type else {
+                    context.invalid_operand(*hole, hole_type.clone());
+                    return;
+                };
+                if **inner != *value_type {
+                    context.invalid_operand(*value, value_type.clone());
+                }
+            }
             crate::lir::Lir::Curry { function, result } => todo!(),
-            crate::lir::Lir::Unreachable { panic } => todo!(),
+            crate::lir::Lir::Unreachable { panic } => {}
         }
     }
     // fn visit_if_then_else<'a>(

@@ -3,6 +3,7 @@ use std::hash::Hash;
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use serde::{Deserialize, Serialize};
 
 use crate::lir::types::{LirType, TypeVar};
 use crate::lir::{Ident, QualifiedName};
@@ -549,13 +550,33 @@ pub struct InductiveTypeDef {
     pub ctors: Box<[CtorDef]>,
 }
 pub type LExpr = lexpr::Value;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     pub name: QualifiedName,
     pub functions: Box<[FunctionDef]>,
     pub external_functions: Box<[FunctionPrototype]>,
     pub inductive_types: Box<[InductiveTypeDef]>,
     pub metadata: HashMap<String, LExpr>,
+}
+
+impl Module {
+    pub fn add_metadata<T: AsRef<str>, S: Serialize>(
+        &mut self,
+        key: T,
+        value: S,
+    ) -> serde_lexpr::Result<()> {
+        self.metadata
+            .insert(key.as_ref().to_string(), serde_lexpr::to_value(&value)?);
+        Ok(())
+    }
+    pub fn get_metadata<T>(&self, key: &str) -> Option<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        self.metadata
+            .get(key)
+            .and_then(|value| serde_lexpr::from_value(value).ok())
+    }
 }
 
 #[cfg(test)]

@@ -1513,7 +1513,7 @@ module test {
     fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
 
     metadata {
-        test = (1 2 3);
+        test = ((("test") (2 Closure ((Primitive . I32)) (Primitive . I32)) (0 Primitive . I32) (3 Primitive . I32) (1 Primitive . I32)));
     }
 }
 "#,

@@ -561,13 +561,38 @@ impl LirVisitor for TypeInference {
 
 #[cfg(test)]
 mod test {
-    use crate::{parser, pass::visitor::LirVisitor};
+    use crate::{parser, pass::visitor::LirVisitor, pprint::PrettyPrint};
     use winnow::Located;
+
+    macro_rules! test_type_inference {
+        (input = $input:literal, err = $err:expr) => {
+            let mut input = Located::new($input);
+            let mut module = parser::parse_module(&mut input).unwrap();
+
+            let types = {
+                let mut visitor = super::TypeInference::default();
+                let mut context = super::TypeInferenceContext::new();
+                visitor.visit_module(&module, &mut context);
+                for (ctx, err) in context.errors.iter() {
+                    println!("{:?} : {}", ctx, err);
+                }
+                assert_eq!(context.errors.len(), $err);
+                visitor.types
+            };
+            module.add_metadata("operand_type", &types);
+            let pprint = format!("{}", PrettyPrint::new(&module));
+            println!("{}", pprint);
+
+            let mut input = Located::new(pprint.as_str());
+            let new_module = parser::parse_module(&mut input).unwrap();
+            assert_eq!(module, new_module);
+        };
+    }
 
     #[test]
     fn test_return_numeric() {
-        let mut input = Located::new(
-            r#"
+        test_type_inference!(
+            input = r#"
         module typing {
             fn test(%0 : i32) -> (i32, i32) {
                 %1 = constant 42 : i32;
@@ -577,20 +602,14 @@ mod test {
             }
         }
         "#,
+            err = 0
         );
-        let module = parser::parse_module(&mut input).unwrap();
-        let mut visitor = super::TypeInference::default();
-        let mut context = super::TypeInferenceContext::new();
-        visitor.visit_module(&module, &mut context);
-        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
-        println!("{}", lexpr);
-        assert_eq!(context.errors.len(), 0);
     }
 
     #[test]
     fn test_closure_apply() {
-        let mut input = Located::new(
-            r#"
+        test_type_inference!(
+            input = r#"
         module typing {
             fn test(%0 : fn (i32, i32) -> i32, %1 : i32) -> fn(i32) -> i32 {
                 %2 = apply %0, %1;
@@ -598,20 +617,14 @@ mod test {
             }
         }
         "#,
+            err = 0
         );
-        let module = parser::parse_module(&mut input).unwrap();
-        let mut visitor = super::TypeInference::default();
-        let mut context = super::TypeInferenceContext::new();
-        visitor.visit_module(&module, &mut context);
-        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
-        println!("{}", lexpr);
-        assert_eq!(context.errors.len(), 0);
     }
 
     #[test]
     fn test_closure_capture() {
-        let mut input = Located::new(
-            r#"
+        test_type_inference!(
+            input = r#"
         module typing {
             fn test(%0 : i32) -> fn(i32) -> i32 {
                 %2 = (%1 : i32) -> i32 {
@@ -622,16 +635,7 @@ mod test {
             }
         }
         "#,
+            err = 0
         );
-        let module = parser::parse_module(&mut input).unwrap();
-        let mut visitor = super::TypeInference::default();
-        let mut context = super::TypeInferenceContext::new();
-        visitor.visit_module(&module, &mut context);
-        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
-        println!("{}", lexpr);
-        for (ctx, err) in context.errors.iter() {
-            println!("{:?} : {}", ctx, err);
-        }
-        assert_eq!(context.errors.len(), 0);
     }
 }

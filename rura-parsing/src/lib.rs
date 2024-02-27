@@ -5,61 +5,42 @@ use winnow::ascii::{
 use winnow::combinator::{alt, delimited, empty, fail, opt, preceded, repeat, separated};
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::{none_of, one_of, take_till, take_until, take_while};
-use winnow::{dispatch, PResult, Parser};
+use winnow::{dispatch, Located, PResult, Parser};
 
-use rura_core::{keywords, BinOp, Constant, Constructor, Member, Members, PrimitiveType, UnOp};
+use rura_core::{
+    keywords, BinOp, Constant, Constructor, Input, Member, Members, PrimitiveType, Span, UnOp,
+};
 
 pub fn expect(x: &'static str) -> StrContext {
     StrContext::Expected(StrContextValue::Description(x))
 }
 
-pub fn opt_or_default<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+pub fn opt_or_default<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
     O: Default,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     opt(f).map(|o| o.unwrap_or_default())
 }
 
-pub fn eol_comment(i: &mut &str) -> PResult<()> {
+pub fn eol_comment(i: &mut Input) -> PResult<()> {
     ("//", till_line_ending).void().parse_next(i)
 }
 
-pub fn multiline_comment(i: &mut &str) -> PResult<()> {
+pub fn multiline_comment(i: &mut Input) -> PResult<()> {
     ("/*", take_until(0.., "*/"), "*/").void().parse_next(i)
 }
 
 /// Parse whitespaces within a line.
-fn lws1(input: &mut &str) -> PResult<()> {
-    take_while(1.., (' ', '\t', '\r')).void().parse_next(input)
+fn lws1(i: &mut Input) -> PResult<()> {
+    take_while(1.., (' ', '\t', '\r')).void().parse_next(i)
 }
 
-fn lws_or_multiline_comment(i: &mut &str) -> PResult<()> {
+fn lws_or_multiline_comment(i: &mut Input) -> PResult<()> {
     repeat(0.., alt((lws1, multiline_comment))).parse_next(i)
 }
 
-pub fn elidable<'a, F, O>(end: F) -> impl Parser<&'a str, (), ContextError>
-where
-    F: Parser<&'a str, O, ContextError>,
-{
-    (
-        lws_or_multiline_comment,
-        alt(("\n".void(), end.void(), eol_comment)),
-    )
-        .void()
-}
-
-pub fn elidable_block<'a, F, T>(
-    val: F,
-    terminator: &'static str,
-) -> impl Parser<&'a str, T, ContextError>
-where
-    F: Copy + Parser<&'a str, T, ContextError>,
-{
-    skip_space(alt((braced(val), suffixed(val, elidable(terminator)))))
-}
-
-pub fn ws_or_comment(i: &mut &str) -> PResult<()> {
+pub fn ws_or_comment(i: &mut Input) -> PResult<()> {
     repeat(
         0..,
         alt((multispace1.void(), eol_comment, multiline_comment)),
@@ -69,92 +50,128 @@ pub fn ws_or_comment(i: &mut &str) -> PResult<()> {
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading
 /// and trailing whitespace, returning the output of `inner`.
-pub fn skip_space<'a, F, O>(inner: F) -> impl Parser<&'a str, O, ContextError>
+pub fn skip_space<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
-    delimited(ws_or_comment, inner, ws_or_comment)
+    delimited(ws_or_comment, f, ws_or_comment)
 }
 
-pub fn parenthesized<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+pub fn elidable<'a, O, F>(end: F) -> impl Parser<Input<'a>, (), ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
+{
+    (
+        lws_or_multiline_comment,
+        alt(("\n".void(), end.void(), eol_comment)),
+    )
+        .void()
+}
+
+pub fn elidable_block<'a, O, O2, F, G>(
+    val: F,
+    terminator: G,
+) -> impl Parser<Input<'a>, O, ContextError>
+where
+    F: Copy + Parser<Input<'a>, O, ContextError>,
+    G: Parser<Input<'a>, O2, ContextError>,
+{
+    skip_space(alt((braced(val), suffixed(val, elidable(terminator)))))
+}
+
+pub fn parenthesized<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
+where
+    F: Parser<Input<'a>, O, ContextError>,
 {
     delimited("(", skip_space(f), ")")
 }
 
-pub fn braced<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+pub fn braced<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     delimited("{", skip_space(f), "}")
 }
 
-pub fn bracketed<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+pub fn bracketed<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     delimited("<", skip_space(f), ">")
 }
 
-pub fn piped<'a, F, O>(f: F) -> impl Parser<&'a str, O, ContextError>
+pub fn piped<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    F: Parser<&'a str, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     delimited("|", skip_space(f), "|")
 }
 
-pub fn prefixed<'a, P, O, F, T>(prefix: P, f: F) -> impl Parser<&'a str, T, ContextError>
+pub fn prefixed<'a, O, O2, P, F>(prefix: P, f: F) -> impl Parser<Input<'a>, O, ContextError>
 where
-    P: Parser<&'a str, O, ContextError>,
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
+    P: Parser<Input<'a>, O2, ContextError>,
 {
     (prefix, skip_space(f)).map(|p| p.1)
 }
 
-pub fn suffixed<'a, S, O, F, T>(f: F, suffix: S) -> impl Parser<&'a str, T, ContextError>
+pub fn suffixed<'a, O, O2, F, S>(f: F, suffix: S) -> impl Parser<Input<'a>, O, ContextError>
 where
-    S: Parser<&'a str, O, ContextError>,
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
+    S: Parser<Input<'a>, O2, ContextError>,
 {
     (f, skip_space(suffix)).map(|p| p.0)
 }
 
-pub fn infixed<'a, I, O, F, T>(
+pub fn infixed<'a, O, O2, F, II>(
     lhs: F,
-    infix: I,
+    infix: II,
     rhs: F,
-) -> impl Parser<&'a str, (T, T), ContextError>
+) -> impl Parser<Input<'a>, (O, O), ContextError>
 where
-    I: Parser<&'a str, O, ContextError>,
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
+    II: Parser<Input<'a>, O2, ContextError>,
 {
     (lhs, skip_space(infix), rhs).map(|(l, _, r)| (l, r))
 }
 
-pub fn identifier<'a, T>(i: &mut &'a str) -> PResult<T>
-where
-    T: From<&'a str>,
-{
+fn unicode_identifier<'a>(i: &mut Input<'a>) -> PResult<Input<'a>> {
     (one_of(is_xid_start), take_while(0.., is_xid_continue))
         .recognize()
-        .map(T::from)
+        .map(Located::new)
         .context(expect("identifier"))
         .parse_next(i)
 }
 
-pub fn qualified_name<'a, Identifier, Qualified>(input: &mut &'a str) -> PResult<Qualified>
+pub fn identifier<'a, ID>(i: &mut Input<'a>) -> PResult<ID>
 where
-    Identifier: From<&'a str>,
-    Qualified: From<Box<[Identifier]>>,
+    ID: From<Input<'a>>,
 {
-    separated(1.., identifier::<Identifier>, "::")
-        .map(|idents: Vec<_>| Qualified::from(idents.into_boxed_slice()))
-        .context(expect("qualified name"))
-        .parse_next(input)
+    unicode_identifier.map(From::from).parse_next(i)
 }
 
-pub fn primitive_type(i: &mut &str) -> PResult<PrimitiveType> {
+pub fn identifier_span<'a, ID>(i: &mut Input<'a>) -> PResult<(ID, Span)>
+where
+    ID: From<Input<'a>>,
+{
+    unicode_identifier
+        .with_span()
+        .map(|(id, span)| (ID::from(id), span))
+        .parse_next(i)
+}
+
+pub fn qualified_name<'a, ID, Q>(i: &mut Input<'a>) -> PResult<Q>
+where
+    ID: From<Input<'a>>,
+    Q: From<Box<[ID]>>,
+{
+    separated(1.., identifier, "::")
+        .map(|idents: Vec<_>| Q::from(idents.into_boxed_slice()))
+        .context(expect("qualified name"))
+        .parse_next(i)
+}
+
+pub fn primitive_type(i: &mut Input) -> PResult<PrimitiveType> {
     let mut dispatch = dispatch! {
         alphanumeric1;
         keywords::I8 => empty.value(PrimitiveType::I8),
@@ -179,7 +196,7 @@ pub fn primitive_type(i: &mut &str) -> PResult<PrimitiveType> {
     dispatch.parse_next(i)
 }
 
-pub fn boolean(i: &mut &str) -> PResult<Constant> {
+pub fn boolean(i: &mut Input) -> PResult<Constant> {
     alpha1
         .try_map(|s: &str| s.parse::<bool>())
         .map(Constant::Bool)
@@ -188,17 +205,17 @@ pub fn boolean(i: &mut &str) -> PResult<Constant> {
 
 macro_rules! number {
     (float $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<Constant> {
+        pub fn $name(i: &mut Input) -> PResult<Constant> {
             float.map(Constant::$ctor).parse_next(i)
         }
     };
     (signed $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<Constant> {
+        pub fn $name(i: &mut Input) -> PResult<Constant> {
             dec_int.map(Constant::$ctor).parse_next(i)
         }
     };
     (unsigned $name:ident $ctor:ident) => {
-        pub fn $name(i: &mut &str) -> PResult<Constant> {
+        pub fn $name(i: &mut Input) -> PResult<Constant> {
             dec_uint.map(Constant::$ctor).parse_next(i)
         }
     };
@@ -219,18 +236,18 @@ number!(unsigned number_u64 U64);
 number!(unsigned number_u128 U128);
 number!(unsigned number_usize USize);
 
-pub fn character(input: &mut &str) -> PResult<Constant> {
+pub fn character(i: &mut Input) -> PResult<Constant> {
     delimited('\'', alt((plain_char, escape)), '\'')
         .map(Constant::Char)
         .context(expect("character"))
-        .parse_next(input)
+        .parse_next(i)
 }
 
-fn plain_char(input: &mut &str) -> PResult<char> {
-    none_of(['\'', '\\']).parse_next(input)
+fn plain_char(i: &mut Input) -> PResult<char> {
+    none_of(['\'', '\\']).parse_next(i)
 }
 
-fn escape(input: &mut &str) -> PResult<char> {
+fn escape(i: &mut Input) -> PResult<char> {
     preceded(
         '\\',
         alt((
@@ -246,7 +263,7 @@ fn escape(input: &mut &str) -> PResult<char> {
             '\''.value('\''),
         )),
     )
-    .parse_next(input)
+    .parse_next(i)
 }
 
 enum StringFragment<'a> {
@@ -254,20 +271,20 @@ enum StringFragment<'a> {
     Escape(char),
 }
 
-fn string_literal<'a>(input: &mut &'a str) -> PResult<&'a str> {
+fn string_literal<'a>(i: &mut Input<'a>) -> PResult<&'a str> {
     take_till(1.., ['"', '\\'])
         .verify(|s: &str| !s.is_empty())
-        .parse_next(input)
+        .parse_next(i)
 }
 
-fn unicode(input: &mut &str) -> PResult<char> {
+fn unicode(i: &mut Input) -> PResult<char> {
     let parse_hex = take_while(1..=6, |c: char| c.is_ascii_hexdigit());
     let parse_delimited_hex = preceded('u', delimited('{', parse_hex, '}'));
     let parse_u32 = parse_delimited_hex.try_map(move |hex| u32::from_str_radix(hex, 16));
-    parse_u32.verify_map(char::from_u32).parse_next(input)
+    parse_u32.verify_map(char::from_u32).parse_next(i)
 }
 
-pub fn string(input: &mut &str) -> PResult<Constant> {
+pub fn string(i: &mut Input) -> PResult<Constant> {
     let build_string = repeat(
         0..,
         alt((
@@ -285,10 +302,10 @@ pub fn string(input: &mut &str) -> PResult<Constant> {
     delimited('"', build_string, '"')
         .map(Constant::Literal)
         .context(expect("string"))
-        .parse_next(input)
+        .parse_next(i)
 }
 
-pub fn constant(i: &mut &str) -> PResult<Constant> {
+pub fn constant(i: &mut Input) -> PResult<Constant> {
     alt((
         character,
         boolean,
@@ -311,24 +328,27 @@ pub fn constant(i: &mut &str) -> PResult<Constant> {
     .parse_next(i)
 }
 
-pub fn prefix_op<'a, F, V, T>(
-    prefix: &'static str,
+pub fn prefix_op<'a, O, O2, O3, P, F>(
+    prefix: P,
     op: UnOp,
     val: F,
-) -> impl Parser<&'a str, T, ContextError>
+) -> impl Parser<Input<'a>, O3, ContextError>
 where
-    F: Parser<&'a str, V, ContextError>,
-    T: From<(UnOp, Box<V>)>,
+    O3: From<(UnOp, Box<O>)>,
+
+    F: Parser<Input<'a>, O, ContextError>,
+    P: Parser<Input<'a>, O2, ContextError>,
 {
     prefixed(prefix, val.map(Box::new))
         .map(move |v| From::from((op, v)))
         .context(expect("prefix operation"))
 }
 
-pub fn unary<'a, F, V, T>(val: F) -> impl Parser<&'a str, T, ContextError>
+pub fn unary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    F: Copy + Parser<&'a str, V, ContextError>,
-    T: From<(UnOp, Box<V>)>,
+    O2: From<(UnOp, Box<O>)>,
+
+    F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     alt((
         prefix_op("-", UnOp::Neg, val),
@@ -336,24 +356,27 @@ where
     ))
 }
 
-pub fn infix_op<'a, F, V, T>(
-    infix: &'static str,
+pub fn infix_op<'a, O, O2, O3, II, F>(
+    infix: II,
     op: BinOp,
     val: F,
-) -> impl Parser<&'a str, T, ContextError>
+) -> impl Parser<Input<'a>, O3, ContextError>
 where
-    F: Copy + Parser<&'a str, V, ContextError>,
-    T: From<(Box<V>, BinOp, Box<V>)>,
+    O3: From<(Box<O>, BinOp, Box<O>)>,
+
+    F: Copy + Parser<Input<'a>, O, ContextError>,
+    II: Copy + Parser<Input<'a>, O2, ContextError>,
 {
     infixed(val.map(Box::new), infix, val.map(Box::new))
         .map(move |(lhs, rhs)| From::from((lhs, op, rhs)))
         .context(expect("infix operation"))
 }
 
-pub fn binary<'a, F, V, T>(val: F) -> impl Parser<&'a str, T, ContextError>
+pub fn binary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    F: Copy + Parser<&'a str, V, ContextError>,
-    T: From<(Box<V>, BinOp, Box<V>)>,
+    O2: From<(Box<O>, BinOp, Box<O>)>,
+
+    F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     alt((
         infix_op(">>", BinOp::Shr, val),
@@ -374,28 +397,28 @@ where
     ))
 }
 
-pub fn field<'a, F, I, T>(typ: F) -> impl Parser<&'a str, (I, T), ContextError>
+pub fn field<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, (ID, O), ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
+    F: Parser<Input<'a>, O, ContextError>,
+    ID: From<Input<'a>>,
 {
-    (identifier::<I>, skip_space(":"), typ).map(|(n, _, t)| (n, t))
+    (identifier, skip_space(":"), typ).map(|(n, _, t)| (n, t))
 }
 
-pub fn members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+pub fn members<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, Members<ID, O>, ContextError>
 where
-    F: Copy + Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
+    F: Copy + Parser<Input<'a>, O, ContextError>,
+    ID: From<Input<'a>>,
 {
     opt(alt((named_members(typ), unnamed_members(typ))))
         .map(|x| x.unwrap_or_default())
         .context(expect("members"))
 }
 
-fn named_members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+fn named_members<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, Members<ID, O>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
+    F: Parser<Input<'a>, O, ContextError>,
+    ID: From<Input<'a>>,
 {
     braced(separated(
         1..,
@@ -406,10 +429,10 @@ where
     .context(expect("named members"))
 }
 
-fn unnamed_members<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Members<I, T>, ContextError>
+fn unnamed_members<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, Members<ID, O>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
+    F: Parser<Input<'a>, O, ContextError>,
+    ID: From<Input<'a>>,
 {
     parenthesized(separated(1.., skip_space(typ), ",").map(|x: Vec<_>| {
         x.into_iter()
@@ -420,64 +443,70 @@ where
     .context(expect("unnamed members"))
 }
 
-pub fn constructor<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Constructor<I, T>, ContextError>
+pub fn constructor<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, Constructor<ID, O>, ContextError>
 where
-    F: Copy + Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
+    F: Copy + Parser<Input<'a>, O, ContextError>,
+    ID: From<Input<'a>>,
 {
-    (identifier, skip_space(members(typ)))
-        .map(|(name, params)| Constructor { name, params })
+    (identifier_span, skip_space(members(typ)))
+        .map(|((name, span), params)| Constructor { span, name, params })
         .context(expect("constructor"))
 }
 
-pub fn function_parameters<'a, F, I, T, P>(typ: F) -> impl Parser<&'a str, Box<[P]>, ContextError>
+pub fn function_parameters<'a, O, O2, ID, F>(
+    typ: F,
+) -> impl Parser<Input<'a>, Box<[O2]>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
-    I: From<&'a str>,
-    P: From<(I, T)>,
+    ID: From<Input<'a>>,
+    O2: From<(ID, O)>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     parenthesized(separated(0.., field(typ), ","))
         .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
 }
 
-pub fn constructor_parameters<'a, I>() -> impl Parser<&'a str, Box<[I]>, ContextError>
+pub fn constructor_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>
 where
-    I: From<&'a str>,
+    ID: From<Input<'a>>,
 {
-    parenthesized(separated(1.., identifier::<I>, ",")).map(|v: Vec<_>| v.into_boxed_slice())
-}
-
-pub fn closure_parameters<'a, I>(i: &mut &'a str) -> PResult<Box<[I]>>
-where
-    I: From<&'a str>,
-{
-    piped(separated(0.., identifier, ","))
-        .map(|p: Vec<_>| p.into_boxed_slice())
+    parenthesized(separated(1.., skip_space(identifier), ","))
+        .map(|v: Vec<_>| v.into_boxed_slice())
+        .context(expect("constructor parameters"))
         .parse_next(i)
 }
 
-pub fn type_parameters<'a, T>(i: &mut &'a str) -> PResult<Box<[T]>>
+pub fn closure_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>
 where
-    T: From<&'a str>,
+    ID: From<Input<'a>>,
 {
-    bracketed(separated(1.., skip_space(identifier::<T>), ","))
+    piped(separated(0.., skip_space(identifier), ","))
+        .map(|p: Vec<_>| p.into_boxed_slice())
+        .context(expect("closure parameters"))
+        .parse_next(i)
+}
+
+pub fn type_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>
+where
+    ID: From<Input<'a>>,
+{
+    bracketed(separated(1.., skip_space(identifier), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type parameters"))
         .parse_next(i)
 }
 
-pub fn type_arguments<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
+pub fn type_arguments<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<[O]>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     bracketed(separated(1.., skip_space(typ), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type arguments"))
 }
 
-pub fn tuple<'a, F, T>(val: F) -> impl Parser<&'a str, Box<[T]>, ContextError>
+pub fn tuple<'a, O, F>(val: F) -> impl Parser<Input<'a>, Box<[O]>, ContextError>
 where
-    F: Copy + Parser<&'a str, T, ContextError>,
+    F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     parenthesized(alt((
         separated(2.., skip_space(val), ","),
@@ -487,20 +516,22 @@ where
     .context(expect("tuple"))
 }
 
-pub fn tuple_type<'a, F, T, TupleT>(typ: F) -> impl Parser<&'a str, TupleT, ContextError>
+pub fn tuple_type<'a, O, O2, F>(typ: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
-    TupleT: From<Box<[T]>>,
+    O2: From<Box<[O]>>,
+
+    F: Parser<Input<'a>, O, ContextError>,
 {
     parenthesized(separated(1.., skip_space(typ), ","))
         .map(|types: Vec<_>| From::from(types.into_boxed_slice()))
         .context(expect("tuple type"))
 }
 
-pub fn function_type<'a, F, T, FuncT>(typ: F) -> impl Parser<&'a str, FuncT, ContextError>
+pub fn function_type<'a, O, O2, F>(typ: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    F: Copy + Parser<&'a str, T, ContextError>,
-    FuncT: From<(Box<[T]>, Box<T>)>,
+    O2: From<(Box<[O]>, Box<O>)>,
+
+    F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     (
         "fn",
@@ -513,18 +544,18 @@ where
         .context(expect("function type"))
 }
 
-pub fn reference_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
+pub fn reference_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<O>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     prefixed("&", typ)
         .map(Box::new)
         .context(expect("reference type"))
 }
 
-pub fn unique_type<'a, F, T>(typ: F) -> impl Parser<&'a str, Box<T>, ContextError>
+pub fn unique_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<O>, ContextError>
 where
-    F: Parser<&'a str, T, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     prefixed("!", typ)
         .map(Box::new)

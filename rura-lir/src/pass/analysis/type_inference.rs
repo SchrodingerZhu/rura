@@ -562,10 +562,12 @@ impl LirVisitor for TypeInference {
 #[cfg(test)]
 mod test {
     use crate::{parser, pass::visitor::LirVisitor};
+    use winnow::Located;
 
     #[test]
     fn test_return_numeric() {
-        let mut input = r#"
+        let mut input = Located::new(
+            r#"
         module typing {
             fn test(%0 : i32) -> (i32, i32) {
                 %1 = constant 42 : i32;
@@ -574,7 +576,8 @@ mod test {
                 return %3;
             }
         }
-        "#;
+        "#,
+        );
         let module = parser::parse_module(&mut input).unwrap();
         let mut visitor = super::TypeInference::default();
         let mut context = super::TypeInferenceContext::new();
@@ -586,14 +589,16 @@ mod test {
 
     #[test]
     fn test_closure_apply() {
-        let mut input = r#"
+        let mut input = Located::new(
+            r#"
         module typing {
             fn test(%0 : fn (i32, i32) -> i32, %1 : i32) -> fn(i32) -> i32 {
                 %2 = apply %0, %1;
                 return %2;
             }
         }
-        "#;
+        "#,
+        );
         let module = parser::parse_module(&mut input).unwrap();
         let mut visitor = super::TypeInference::default();
         let mut context = super::TypeInferenceContext::new();
@@ -605,7 +610,8 @@ mod test {
 
     #[test]
     fn test_closure_capture() {
-        let mut input = r#"
+        let mut input = Located::new(
+            r#"
         module typing {
             fn test(%0 : i32) -> fn(i32) -> i32 {
                 %2 = (%1 : i32) -> i32 {
@@ -615,7 +621,8 @@ mod test {
                 return %2;
             }
         }
-        "#;
+        "#,
+        );
         let module = parser::parse_module(&mut input).unwrap();
         let mut visitor = super::TypeInference::default();
         let mut context = super::TypeInferenceContext::new();

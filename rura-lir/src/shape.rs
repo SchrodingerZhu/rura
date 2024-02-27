@@ -263,6 +263,7 @@ mod test {
             type_params: Box::new([Ident("T".into())]),
             bounds: [].into(),
             ctors: Box::new([CtorDef {
+                span: Default::default(),
                 name: Ident("Box".into()),
                 params: Box::new([(
                     Member::Index(0),

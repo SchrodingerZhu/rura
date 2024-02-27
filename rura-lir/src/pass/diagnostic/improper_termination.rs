@@ -31,6 +31,8 @@ impl DiagnosticPass<'_> for ImproperTermination {}
 
 #[cfg(test)]
 mod test {
+    use winnow::Located;
+
     use crate::{
         parser::parse_module,
         pass::diagnostic::{fmt_diagnostic_messages, DiagnosticPass},
@@ -38,14 +40,16 @@ mod test {
 
     #[test]
     fn test_no_errors() {
-        let mut module = r#"
+        let mut module = Located::new(
+            r#"
             module test {
                 fn main() -> i32 {
                     %0 = constant 0 : i32;
                     return %0;
                 }
             }
-        "#;
+        "#,
+        );
         let mut pass = super::ImproperTermination;
         let module = parse_module(&mut module).unwrap();
         let messages = pass.run_diagnostic(&module);
@@ -57,7 +61,8 @@ mod test {
 
     #[test]
     fn test_errors() {
-        let mut module = r#"
+        let mut module = Located::new(
+            r#"
             module test {
                 fn main() -> i32 {
                     %0 = constant 0 : i32;
@@ -68,7 +73,8 @@ mod test {
                     };
                 }
             }
-        "#;
+        "#,
+        );
         let mut pass = super::ImproperTermination;
         let module = parse_module(&mut module).unwrap();
         let messages = pass.run_diagnostic(&module);

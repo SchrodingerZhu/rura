@@ -132,14 +132,18 @@ pub fn get_free_variable(closure: &ClosureCreation) -> HashSet<usize> {
 
 #[cfg(test)]
 mod test {
-    use crate::parser::parse_module;
+    use winnow::Located;
+
     use rura_core::lir::ir::Lir;
+
+    use crate::parser::parse_module;
 
     use super::get_free_variable;
 
     #[test]
     fn test_free_variable_analysis() {
-        let mut input = r#"
+        let mut input = Located::new(
+            r#"
             module test {
                 fn test() -> fn (i32, i32) -> i32 {
                     %0 = constant 991208 : i32;
@@ -151,7 +155,8 @@ mod test {
                     return %1;
                 }
             }
-        "#;
+        "#,
+        );
         let module = parse_module(&mut input).unwrap();
         let Lir::Closure(closure) = &module.functions[0].body.0[1] else {
             panic!("Expected a closure");

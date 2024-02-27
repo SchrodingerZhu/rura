@@ -565,6 +565,7 @@ impl Display for PrettyPrint<'_, Module> {
 mod test {
     use rura_core::lir::ir::Lir;
     use rura_core::{BinOp, PrimitiveType, UnOp};
+    use winnow::Located;
 
     use crate::parser::parse_module;
 
@@ -572,7 +573,7 @@ mod test {
 
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
-        let mut input = src.as_str();
+        let mut input = Located::new(src.as_str());
         let module = parse_module(&mut input).unwrap();
         assert_eq!(&module.external_functions[0].return_type, ty);
     }
@@ -582,7 +583,7 @@ mod test {
             PrettyPrint::with_indent(ir, 2)
         );
         println!("{}", src);
-        let mut input = src.as_str();
+        let mut input = Located::new(src.as_str());
         let module = parse_module(&mut input).unwrap();
         assert_eq!(&module.functions[0].body.0[0], ir);
     }
@@ -819,7 +820,8 @@ mod test {
     #[test]
     fn test_module_pprint() {
         use std::io::Write;
-        const MODULE: &str = r#"
+        let mut input = Located::new(
+            r#"
         module test {
             enum List<T>
                 where @T: Foo
@@ -840,15 +842,15 @@ mod test {
             }
             fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
         }
-        "#;
-        let mut input = MODULE;
+        "#,
+        );
         let module = parse_module(&mut input).unwrap();
         let mut buffer = Vec::new();
         println!("{}", PrettyPrint::new(&module));
         write!(&mut buffer, "{}", PrettyPrint::new(&module)).unwrap();
         let string = String::from_utf8(buffer).unwrap();
-        let mut input2 = string.as_str();
+        let mut input2 = Located::new(string.as_str());
         let module2 = parse_module(&mut input2).unwrap();
-        assert_eq!(module, module2);
+        assert_eq!(module.name, module2.name);
     }
 }

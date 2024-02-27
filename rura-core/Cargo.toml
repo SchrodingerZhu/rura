@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+winnow = "0.6.2"
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
 

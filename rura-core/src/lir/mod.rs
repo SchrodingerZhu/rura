@@ -1,9 +1,11 @@
-use crate::fmt_separated;
-use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{fmt_separated, Input};
 
 pub mod ir;
 pub mod types;
@@ -15,6 +17,12 @@ pub struct Ident(pub Box<str>);
 impl From<&str> for Ident {
     fn from(s: &str) -> Self {
         Self(s.into())
+    }
+}
+
+impl<'a> From<Input<'a>> for Ident {
+    fn from(s: Input<'a>) -> Self {
+        Self(s.to_string().into())
     }
 }
 

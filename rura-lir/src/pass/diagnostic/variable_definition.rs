@@ -1,9 +1,10 @@
-use rura_core::lir::ir::{
-    ClosureCreation, EliminationStyle, FunctionDef, IfThenElse, InductiveEliminator, Lir,
-};
 use std::{
     collections::HashSet,
     fmt::{Display, Formatter},
+};
+
+use rura_core::lir::ir::{
+    ClosureCreation, EliminationStyle, FunctionDef, IfThenElse, InductiveEliminator, Lir,
 };
 
 use crate::pass::{
@@ -229,11 +230,13 @@ impl DiagnosticPass<'_> for VariableDefinition {}
 
 #[cfg(test)]
 mod test {
+    use winnow::Located;
+
     use crate::pass::diagnostic::{fmt_diagnostic_messages, DiagnosticPass};
 
     macro_rules! test_variable_defs {
         (input = $input:literal, error_cnt = $error_cnt:expr) => {
-            let mut module = $input;
+            let mut module = Located::new($input);
             let mut pass = super::VariableDefinition::new();
             let module = crate::parser::parse_module(&mut module).unwrap();
             let messages = pass.run_diagnostic(&module);

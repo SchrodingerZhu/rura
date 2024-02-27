@@ -1,10 +1,16 @@
 use std::fmt::{Display, Formatter, Write};
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
+use winnow::Located;
 
 pub mod ast;
 pub mod lir;
+
+pub type Span = Range<usize>;
+
+pub type Input<'a> = Located<&'a str>;
 
 pub fn fmt_separated<T, P, I, W: Write>(f: &mut W, args: I, sep: P) -> std::fmt::Result
 where
@@ -298,6 +304,7 @@ impl Display for BinOp {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Constructor<Identifier, Type> {
+    pub span: Span,
     pub name: Identifier,
     pub params: Members<Identifier, Type>,
 }

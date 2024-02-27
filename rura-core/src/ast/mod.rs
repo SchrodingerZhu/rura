@@ -4,7 +4,9 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use crate::keywords::{BOTTOM, TYPE, UNIT};
-use crate::{fmt_delimited, fmt_separated, BinOp, Constant, Constructor, PrimitiveType, UnOp};
+use crate::{
+    fmt_delimited, fmt_separated, BinOp, Constant, Constructor, Input, PrimitiveType, Span, UnOp,
+};
 
 /// Name of symbols (e.g. global definitions, local variables), with its raw text and an associated
 /// globally unique ID. The ID is just the address of the internal RC-tracked string.
@@ -29,9 +31,9 @@ impl Name {
     }
 }
 
-impl<'a> From<&'a str> for Name {
-    fn from(s: &'a str) -> Self {
-        Self::new(s)
+impl<'a> From<Input<'a>> for Name {
+    fn from(s: Input<'a>) -> Self {
+        Self::new(s.to_string())
     }
 }
 
@@ -144,6 +146,7 @@ pub type Parameters<T> = Box<[Parameter<T>]>;
 
 #[derive(Clone, Debug)]
 pub struct Declaration<T> {
+    pub span: Span,
     pub name: Name,
     pub type_parameters: Option<Parameters<T>>,
     pub parameters: Parameters<T>,
@@ -153,11 +156,13 @@ pub struct Declaration<T> {
 
 impl Declaration<AST> {
     pub fn type_declaration(
+        span: Span,
         name: Name,
         types: Option<Box<[Name]>>,
         definition: Definition<AST>,
     ) -> Self {
         Self {
+            span,
             name,
             type_parameters: types.map(Parameter::type_parameters),
             parameters: Default::default(),

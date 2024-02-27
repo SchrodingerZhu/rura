@@ -6,14 +6,15 @@ use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_core::keywords::{BOTTOM, UNIT};
+use rura_core::Input;
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
-    elidable_block, expect, field, function_parameters, function_type, identifier, parenthesized,
-    prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple, tuple_type,
-    type_arguments, type_parameters, unary, unique_type,
+    elidable_block, expect, field, function_parameters, function_type, identifier, identifier_span,
+    parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
+    tuple_type, type_arguments, type_parameters, unary, unique_type,
 };
 
-pub fn file(i: &mut &str) -> PResult<File> {
+pub fn file(i: &mut Input) -> PResult<File> {
     repeat(
         0..,
         skip_space(alt((
@@ -26,10 +27,10 @@ pub fn file(i: &mut &str) -> PResult<File> {
     .parse_next(i)
 }
 
-fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
+fn function_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "fn",
-        skip_space(identifier),
+        skip_space(identifier_span),
         opt(type_parameters).map(|ps| ps.map(Parameter::type_parameters)),
         skip_space(function_parameters(type_expression)),
         opt(prefixed("->", skip_space(type_expression)))
@@ -37,7 +38,8 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         elidable_block(function_definition, ";"),
     )
         .map(
-            |(_, name, type_parameters, parameters, return_type, definition)| Declaration {
+            |(_, (name, span), type_parameters, parameters, return_type, definition)| Declaration {
+                span,
                 name,
                 type_parameters,
                 parameters,
@@ -49,55 +51,55 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
         .parse_next(i)
 }
 
-fn function_definition(i: &mut &str) -> PResult<Definition<AST>> {
+fn function_definition(i: &mut Input) -> PResult<Definition<AST>> {
     block_statement
         .map(|e| Definition::Function(Box::new(e)))
         .parse_next(i)
 }
 
-fn enum_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
+fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "enum",
-        skip_space(identifier),
+        skip_space(identifier_span),
         opt(type_parameters),
         elidable_block(enum_definition, ";"),
     )
-        .map(|(_, name, types, def)| Declaration::type_declaration(name, types, def))
+        .map(|(_, (name, span), types, def)| Declaration::type_declaration(span, name, types, def))
         .context(expect("enum declaration"))
         .parse_next(i)
 }
 
-fn enum_definition(i: &mut &str) -> PResult<Definition<AST>> {
+fn enum_definition(i: &mut Input) -> PResult<Definition<AST>> {
     separated(1.., skip_space(constructor(type_expression)), elidable(","))
         .map(|ctors: Vec<_>| Definition::Enum(Enum::Unchecked(ctors.into_boxed_slice())))
         .parse_next(i)
 }
 
-fn struct_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
+fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "struct",
-        skip_space(identifier),
+        skip_space(identifier_span),
         opt(type_parameters),
         elidable_block(struct_definition, ";"),
     )
-        .map(|(_, name, types, def)| Declaration::type_declaration(name, types, def))
+        .map(|(_, (name, span), types, def)| Declaration::type_declaration(span, name, types, def))
         .context(expect("struct declaration"))
         .parse_next(i)
 }
 
-fn struct_definition(i: &mut &str) -> PResult<Definition<AST>> {
+fn struct_definition(i: &mut Input) -> PResult<Definition<AST>> {
     separated(1.., skip_space(field(type_expression)), elidable(","))
         .map(|f: Vec<_>| Definition::Struct(Struct::Unchecked(f.into_boxed_slice())))
         .parse_next(i)
 }
 
-fn block_statement(i: &mut &str) -> PResult<AST> {
+fn block_statement(i: &mut Input) -> PResult<AST> {
     alt((let_statement, return_statement))
         .context(expect("block statement"))
         .parse_next(i)
 }
 
-fn let_statement(i: &mut &str) -> PResult<AST> {
+fn let_statement(i: &mut Input) -> PResult<AST> {
     (
         "let",
         skip_space(identifier),
@@ -117,13 +119,13 @@ fn let_statement(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn return_statement(i: &mut &str) -> PResult<AST> {
+fn return_statement(i: &mut Input) -> PResult<AST> {
     value_expression
         .context(expect("return statement"))
         .parse_next(i)
 }
 
-fn value_expression(i: &mut &str) -> PResult<AST> {
+fn value_expression(i: &mut Input) -> PResult<AST> {
     alt((
         unary(value_expression),
         binary(value_expression),
@@ -139,7 +141,7 @@ fn value_expression(i: &mut &str) -> PResult<AST> {
     .parse_next(i)
 }
 
-fn closure(i: &mut &str) -> PResult<AST> {
+fn closure(i: &mut Input) -> PResult<AST> {
     (
         closure_parameters,
         alt((braced(block_statement), value_expression)).map(Box::new),
@@ -149,7 +151,7 @@ fn closure(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn indexing(i: &mut &str) -> PResult<AST> {
+fn indexing(i: &mut Input) -> PResult<AST> {
     (
         alt((call, primary_value_expression)).map(Box::new),
         ".",
@@ -160,7 +162,7 @@ fn indexing(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn call(i: &mut &str) -> PResult<AST> {
+fn call(i: &mut Input) -> PResult<AST> {
     (
         primary_value_expression,
         repeat(
@@ -183,7 +185,7 @@ fn call(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn if_then_else(i: &mut &str) -> PResult<AST> {
+fn if_then_else(i: &mut Input) -> PResult<AST> {
     (
         "if",
         skip_space(value_expression).map(Box::new),
@@ -202,7 +204,7 @@ fn if_then_else(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn matching(i: &mut &str) -> PResult<AST> {
+fn matching(i: &mut Input) -> PResult<AST> {
     (
         "match",
         skip_space(value_expression).map(Box::new),
@@ -213,16 +215,16 @@ fn matching(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn matchers(i: &mut &str) -> PResult<Box<[Matcher]>> {
+fn matchers(i: &mut Input) -> PResult<Box<[Matcher]>> {
     repeat(1.., matcher)
         .map(|v: Vec<_>| v.into_boxed_slice())
         .parse_next(i)
 }
 
-fn matcher(i: &mut &str) -> PResult<Matcher> {
+fn matcher(i: &mut Input) -> PResult<Matcher> {
     (
         skip_space(qualified_name),
-        opt(skip_space(constructor_parameters())),
+        opt(skip_space(constructor_parameters)),
         "=>",
         elidable_block(block_statement, ","),
     )
@@ -235,7 +237,7 @@ fn matcher(i: &mut &str) -> PResult<Matcher> {
         .parse_next(i)
 }
 
-fn access(i: &mut &str) -> PResult<AST> {
+fn access(i: &mut Input) -> PResult<AST> {
     (
         primary_value_expression,
         repeat(1.., prefixed(".", identifier::<Name>)),
@@ -250,7 +252,7 @@ fn access(i: &mut &str) -> PResult<AST> {
         .parse_next(i)
 }
 
-fn primary_value_expression(i: &mut &str) -> PResult<AST> {
+fn primary_value_expression(i: &mut Input) -> PResult<AST> {
     alt((
         constant.map(AST::Constant),
         qualified_name.map(AST::Variable),
@@ -261,7 +263,7 @@ fn primary_value_expression(i: &mut &str) -> PResult<AST> {
     .parse_next(i)
 }
 
-fn type_expression(i: &mut &str) -> PResult<AST> {
+fn type_expression(i: &mut Input) -> PResult<AST> {
     alt((
         UNIT.map(|_| AST::UnitType),
         BOTTOM.map(|_| AST::BottomType),
@@ -278,7 +280,7 @@ fn type_expression(i: &mut &str) -> PResult<AST> {
     .parse_next(i)
 }
 
-fn type_call(i: &mut &str) -> PResult<AST> {
+fn type_call(i: &mut Input) -> PResult<AST> {
     (qualified_name, "::", type_arguments(type_expression))
         .map(|(qn, _, type_arguments)| AST::TypeCall {
             type_callee: Box::new(AST::Variable(qn)),

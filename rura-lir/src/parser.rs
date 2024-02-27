@@ -3,7 +3,6 @@ use winnow::combinator::{alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
-use rura_core::keywords;
 use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::lir::ir::{
     ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
@@ -13,6 +12,7 @@ use rura_core::lir::ir::{
 use rura_core::lir::types::{LirType, TypeVar};
 use rura_core::lir::{Ident, QualifiedName};
 use rura_core::Constant;
+use rura_core::{keywords, Input};
 use rura_core::{BinOp, Member, UnOp};
 use rura_parsing::{
     constructor, expect, function_type, identifier, opt_or_default, parenthesized, primitive_type,
@@ -20,25 +20,25 @@ use rura_parsing::{
     ws_or_comment,
 };
 
-fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
+fn parse_type_hole(i: &mut Input) -> PResult<LirType> {
     ("◊", parse_lir_type)
         .map(|(_, x)| LirType::Hole(Box::new(x)))
         .parse_next(i)
 }
 
-fn parse_reuse_token_type(i: &mut &str) -> PResult<LirType> {
+fn parse_reuse_token_type(i: &mut Input) -> PResult<LirType> {
     ("↻", parse_lir_type)
         .map(|(_, x)| LirType::Token(Box::new(x)))
         .parse_next(i)
 }
 
-fn parse_unique_type(i: &mut &str) -> PResult<LirType> {
+fn parse_unique_type(i: &mut Input) -> PResult<LirType> {
     ("†", parse_lir_type)
         .map(|(_, x)| LirType::Unique(Box::new(x)))
         .parse_next(i)
 }
 
-fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
+fn parse_object_type_content(i: &mut Input) -> PResult<(QualifiedName, Box<[LirType]>)> {
     (
         qualified_name,
         opt_or_default(type_arguments(parse_lir_type)),
@@ -46,7 +46,7 @@ fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirTy
         .parse_next(i)
 }
 
-fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
+fn parse_lir_type(i: &mut Input) -> PResult<LirType> {
     alt((
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
@@ -65,7 +65,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
 }
 
 // for now, only allow simple one-level type vars
-fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
+fn parse_type_variable(i: &mut Input) -> PResult<TypeVar> {
     let plain = identifier.map(TypeVar::Plain);
     let associated =
         (identifier, skip_space("::"), identifier).map(|(a, _, b)| TypeVar::Associated(a, b));
@@ -84,7 +84,7 @@ fn parse_type_variable(i: &mut &str) -> PResult<TypeVar> {
         .parse_next(i)
 }
 
-fn parse_operand(i: &mut &str) -> PResult<usize> {
+fn parse_operand(i: &mut Input) -> PResult<usize> {
     preceded("%", digit1.try_map(|x: &str| x.parse()))
         .map(|x: usize| x)
         .parse_next(i)
@@ -92,7 +92,7 @@ fn parse_operand(i: &mut &str) -> PResult<usize> {
 
 macro_rules! parse_typed_value {
     ($name:ident $parser:ident $kw:ident) => {
-        fn $name(i: &mut &str) -> PResult<Constant> {
+        fn $name(i: &mut Input) -> PResult<Constant> {
             (
                 rura_parsing::$parser,
                 skip_space(":"),
@@ -122,7 +122,7 @@ parse_typed_value!(parse_typed_u128 number_u128 U128);
 parse_typed_value!(parse_typed_usize number_usize USIZE);
 parse_typed_value!(parse_typed_literal string STR);
 
-fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_constant_instr(i: &mut Input) -> PResult<Lir> {
     let inner = alt((
         parse_typed_char,
         parse_typed_bool,
@@ -157,7 +157,7 @@ fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_apply_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -175,14 +175,14 @@ fn parse_apply_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_unreachable_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_unreachable_instr(i: &mut Input) -> PResult<Lir> {
     let panic =
         ("unreachable", skip_space("[panic]"), ";").map(|_| Lir::Unreachable { panic: true });
     let non_panic = ("unreachable", ws_or_comment, ";").map(|_| Lir::Unreachable { panic: false });
     alt((panic, non_panic)).parse_next(i)
 }
 
-fn parse_tuple_intro_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_tuple_intro_instr(i: &mut Input) -> PResult<Lir> {
     let inner = separated(1.., skip_space(parse_operand), ",");
     (
         parse_operand,
@@ -202,7 +202,7 @@ fn parse_tuple_intro_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_tuple_elim_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_tuple_elim_instr(i: &mut Input) -> PResult<Lir> {
     let inner = separated(1.., skip_space(parse_operand), ",");
     (
         "(",
@@ -222,7 +222,7 @@ fn parse_tuple_elim_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_unary_op<'a>(x: char, op: UnOp) -> impl Parser<&'a str, Lir, ContextError> {
+fn parse_unary_op<'a>(x: char, op: UnOp) -> impl Parser<Input<'a>, Lir, ContextError> {
     (
         parse_operand,
         skip_space('='),
@@ -239,7 +239,7 @@ fn parse_unary_op<'a>(x: char, op: UnOp) -> impl Parser<&'a str, Lir, ContextErr
         })
 }
 
-fn parse_arith_mode(i: &mut &str) -> PResult<ArithMode> {
+fn parse_arith_mode(i: &mut Input) -> PResult<ArithMode> {
     ('[', skip_space(alpha1), ']')
         .verify_map(|(_, data, _)| match data {
             "default" => Some(ArithMode::Default),
@@ -250,7 +250,7 @@ fn parse_arith_mode(i: &mut &str) -> PResult<ArithMode> {
         .parse_next(i)
 }
 
-fn parse_binary_op(x: &str, op: BinOp) -> impl Parser<&'_ str, Lir, ContextError> {
+fn parse_binary_op(x: &str, op: BinOp) -> impl Parser<Input, Lir, ContextError> {
     (
         parse_operand,
         skip_space('='),
@@ -271,7 +271,7 @@ fn parse_binary_op(x: &str, op: BinOp) -> impl Parser<&'_ str, Lir, ContextError
         })
 }
 
-fn parse_bin_ops(i: &mut &str) -> PResult<Lir> {
+fn parse_bin_ops(i: &mut Input) -> PResult<Lir> {
     alt((
         parse_binary_op("+", BinOp::Add),
         parse_binary_op("-", BinOp::Sub),
@@ -292,7 +292,7 @@ fn parse_bin_ops(i: &mut &str) -> PResult<Lir> {
     .parse_next(i)
 }
 
-fn parse_unary_ops(i: &mut &str) -> PResult<Lir> {
+fn parse_unary_ops(i: &mut Input) -> PResult<Lir> {
     alt((
         parse_unary_op('-', UnOp::Neg),
         parse_unary_op('!', UnOp::Not),
@@ -300,7 +300,7 @@ fn parse_unary_ops(i: &mut &str) -> PResult<Lir> {
     .parse_next(i)
 }
 
-fn parse_block(i: &mut &str) -> PResult<Block> {
+fn parse_block(i: &mut Input) -> PResult<Block> {
     let inner = repeat(0.., skip_space(parse_lir_instr));
     ("{", inner, "}")
         .map(|(_, x, _)| Block(x))
@@ -308,7 +308,7 @@ fn parse_block(i: &mut &str) -> PResult<Block> {
         .parse_next(i)
 }
 
-fn parse_closure_params(i: &mut &str) -> PResult<Box<[(usize, LirType)]>> {
+fn parse_closure_params(i: &mut Input) -> PResult<Box<[(usize, LirType)]>> {
     let param_pair = (parse_operand, skip_space(":"), parse_lir_type).map(|(x, _, y)| (x, y));
     let inner = separated(0.., skip_space(param_pair), ",").map(|x: Vec<_>| x.into_boxed_slice());
     parenthesized(inner)
@@ -316,7 +316,7 @@ fn parse_closure_params(i: &mut &str) -> PResult<Box<[(usize, LirType)]>> {
         .parse_next(i)
 }
 
-fn parse_closure_hoas(i: &mut &str) -> PResult<Lir> {
+fn parse_closure_hoas(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space('='),
@@ -337,13 +337,13 @@ fn parse_closure_hoas(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_return_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_return_instr(i: &mut Input) -> PResult<Lir> {
     ("return", skip_space(parse_operand), ";")
         .map(|(_, value, _)| Lir::Return { value })
         .parse_next(i)
 }
 
-fn parse_if_then_else_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_if_then_else_instr(i: &mut Input) -> PResult<Lir> {
     (
         "if",
         skip_space(parse_operand),
@@ -362,7 +362,7 @@ fn parse_if_then_else_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_lir_instr(i: &mut Input) -> PResult<Lir> {
     alt((
         parse_closure_hoas,
         parse_constant_instr,
@@ -390,7 +390,7 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
     .parse_next(i)
 }
 
-fn parse_named_value_bindings(i: &mut &str) -> PResult<Vec<(Ident, usize)>> {
+fn parse_named_value_bindings(i: &mut Input) -> PResult<Vec<(Ident, usize)>> {
     let single = (identifier, skip_space(":"), parse_operand).map(|(name, _, value)| (name, value));
     ("{", separated(1.., skip_space(single), ","), "}")
         .map(|(_, x, _)| x)
@@ -398,7 +398,7 @@ fn parse_named_value_bindings(i: &mut &str) -> PResult<Vec<(Ident, usize)>> {
         .parse_next(i)
 }
 
-fn parse_unnamed_value_bindings(i: &mut &str) -> PResult<Vec<usize>> {
+fn parse_unnamed_value_bindings(i: &mut Input) -> PResult<Vec<usize>> {
     let inner = separated(1.., skip_space(parse_operand), ",");
     ("(", inner, ")")
         .map(|(_, x, _)| x)
@@ -406,7 +406,7 @@ fn parse_unnamed_value_bindings(i: &mut &str) -> PResult<Vec<usize>> {
         .parse_next(i)
 }
 
-fn parse_member_bindings(i: &mut &str) -> PResult<Box<[RefField]>> {
+fn parse_member_bindings(i: &mut Input) -> PResult<Box<[RefField]>> {
     let named = parse_named_value_bindings.map(|inner| {
         inner
             .into_iter()
@@ -425,14 +425,14 @@ fn parse_member_bindings(i: &mut &str) -> PResult<Box<[RefField]>> {
     alt((named, unnamed)).parse_next(i)
 }
 
-fn parse_squared_operand(i: &mut &str) -> PResult<usize> {
+fn parse_squared_operand(i: &mut Input) -> PResult<usize> {
     ("[", skip_space(parse_operand), "]")
         .map(|(_, x, _)| x)
         .context(expect("squared operand"))
         .parse_next(i)
 }
 
-fn parse_named_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, Ident, usize)>> {
+fn parse_named_value_bindings_with_holes(i: &mut Input) -> PResult<Vec<(usize, Ident, usize)>> {
     let single = (
         parse_squared_operand,
         skip_space(identifier),
@@ -447,7 +447,7 @@ fn parse_named_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, Id
         .parse_next(i)
 }
 
-fn parse_unnamed_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, usize)>> {
+fn parse_unnamed_value_bindings_with_holes(i: &mut Input) -> PResult<Vec<(usize, usize)>> {
     let single =
         (parse_squared_operand, ws_or_comment, parse_operand).map(|(hole, _, value)| (hole, value));
     ("(", separated(1.., skip_space(single), ","), ")")
@@ -456,7 +456,7 @@ fn parse_unnamed_value_bindings_with_holes(i: &mut &str) -> PResult<Vec<(usize, 
         .parse_next(i)
 }
 
-fn parse_member_bindings_with_holes(i: &mut &str) -> PResult<Box<[MakeMutReceiver]>> {
+fn parse_member_bindings_with_holes(i: &mut Input) -> PResult<Box<[MakeMutReceiver]>> {
     let named = parse_named_value_bindings_with_holes.map(|inner| {
         inner
             .into_iter()
@@ -483,7 +483,7 @@ fn parse_member_bindings_with_holes(i: &mut &str) -> PResult<Box<[MakeMutReceive
     alt((named, unnamed)).parse_next(i)
 }
 
-fn parse_fixpoint_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+fn parse_fixpoint_eliminator_header(i: &mut Input) -> PResult<(QualifiedName, EliminationStyle)> {
     (
         "[fixpoint(",
         skip_space(parse_operand),
@@ -496,7 +496,7 @@ fn parse_fixpoint_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, Eli
         .parse_next(i)
 }
 
-fn parse_unwrap_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+fn parse_unwrap_eliminator_header(i: &mut Input) -> PResult<(QualifiedName, EliminationStyle)> {
     (
         "[unwrap(",
         skip_space(parse_operand),
@@ -509,7 +509,7 @@ fn parse_unwrap_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, Elimi
         .parse_next(i)
 }
 
-fn parse_mutation_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+fn parse_mutation_eliminator_header(i: &mut Input) -> PResult<(QualifiedName, EliminationStyle)> {
     (
         "[mutation]",
         skip_space(qualified_name),
@@ -520,14 +520,14 @@ fn parse_mutation_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, Eli
         .parse_next(i)
 }
 
-fn parse_ref_eliminator_header(i: &mut &str) -> PResult<(QualifiedName, EliminationStyle)> {
+fn parse_ref_eliminator_header(i: &mut Input) -> PResult<(QualifiedName, EliminationStyle)> {
     ("[ref]", skip_space(qualified_name), parse_member_bindings)
         .map(|(_, name, fields)| (name, EliminationStyle::Ref(fields)))
         .context(expect("ref eliminator header"))
         .parse_next(i)
 }
 
-fn parse_inductive_elimination_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_inductive_elimination_instr(i: &mut Input) -> PResult<Lir> {
     let header = alt((
         parse_fixpoint_eliminator_header,
         parse_unwrap_eliminator_header,
@@ -548,7 +548,7 @@ fn parse_inductive_elimination_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_fill_instr(i: &mut Input) -> PResult<Lir> {
     (
         "fill",
         skip_space(parse_operand),
@@ -560,7 +560,7 @@ fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_rc_to_unique_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_rc_to_unique_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -572,7 +572,7 @@ fn parse_rc_to_unique_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_unique_to_rc_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_unique_to_rc_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -584,7 +584,7 @@ fn parse_unique_to_rc_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_cast_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_cast_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -602,12 +602,12 @@ fn parse_cast_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_operand_list<'a>() -> impl Parser<&'a str, Box<[usize]>, ContextError> {
+fn parse_operand_list<'a>() -> impl Parser<Input<'a>, Box<[usize]>, ContextError> {
     ("(", separated(0.., skip_space(parse_operand), ","), ")")
         .map(|(_, x, _)| Vec::into_boxed_slice(x))
 }
 
-fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_call_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -626,7 +626,7 @@ fn parse_call_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_ctor_call_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_ctor_call_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -656,7 +656,7 @@ fn parse_ctor_call_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_clone_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_clone_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -668,13 +668,13 @@ fn parse_clone_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_drop_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_drop_instr(i: &mut Input) -> PResult<Lir> {
     ("drop", skip_space(parse_operand), ";")
         .map(|(_, value, _)| Lir::Drop { value, token: None })
         .parse_next(i)
 }
 
-fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_drop_for_reuse_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -689,7 +689,7 @@ fn parse_drop_for_reuse_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_curry_instr(i: &mut &str) -> PResult<Lir> {
+fn parse_curry_instr(i: &mut Input) -> PResult<Lir> {
     (
         parse_operand,
         skip_space("="),
@@ -701,7 +701,7 @@ fn parse_curry_instr(i: &mut &str) -> PResult<Lir> {
         .parse_next(i)
 }
 
-fn parse_trait_expr(i: &mut &str) -> PResult<TraitExpr> {
+fn parse_trait_expr(i: &mut Input) -> PResult<TraitExpr> {
     let named_param =
         (identifier, skip_space("="), parse_lir_type).map(|(name, _, ty)| (Some(name), ty));
     let unnamed_param = parse_lir_type.map(|ty| (None, ty));
@@ -713,7 +713,7 @@ fn parse_trait_expr(i: &mut &str) -> PResult<TraitExpr> {
         .parse_next(i)
 }
 
-fn parse_bounded_type_var(i: &mut &str) -> PResult<Bound> {
+fn parse_bounded_type_var(i: &mut Input) -> PResult<Bound> {
     (
         parse_type_variable,
         skip_space(":"),
@@ -726,7 +726,7 @@ fn parse_bounded_type_var(i: &mut &str) -> PResult<Bound> {
         .parse_next(i)
 }
 
-fn parse_function_prototype(i: &mut &str) -> PResult<FunctionPrototype> {
+fn parse_function_prototype(i: &mut Input) -> PResult<FunctionPrototype> {
     let type_params = opt((
         "<",
         separated(1.., skip_space(identifier::<Ident>), ","),
@@ -770,7 +770,7 @@ fn parse_function_prototype(i: &mut &str) -> PResult<FunctionPrototype> {
         .parse_next(i)
 }
 
-fn parse_function_def(i: &mut &str) -> PResult<FunctionDef> {
+fn parse_function_def(i: &mut Input) -> PResult<FunctionDef> {
     (
         parse_function_prototype,
         ws_or_comment,
@@ -780,13 +780,13 @@ fn parse_function_def(i: &mut &str) -> PResult<FunctionDef> {
         .parse_next(i)
 }
 
-fn parse_extern_function_def(i: &mut &str) -> PResult<FunctionPrototype> {
+fn parse_extern_function_def(i: &mut Input) -> PResult<FunctionPrototype> {
     (parse_function_prototype, ";")
         .map(|(x, _)| x)
         .parse_next(i)
 }
 
-fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
+fn parse_inductive_type_def(i: &mut Input) -> PResult<InductiveTypeDef> {
     let bounds = opt((
         "where",
         separated(1.., skip_space(parse_bounded_type_var), ","),
@@ -817,7 +817,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
         .parse_next(i)
 }
 
-pub fn parse_module(i: &mut &str) -> PResult<Module> {
+pub fn parse_module(i: &mut Input) -> PResult<Module> {
     enum ModuleItem {
         Function(FunctionDef),
         ExternFunction(FunctionPrototype),
@@ -861,6 +861,7 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 #[cfg(test)]
 mod test {
     use winnow::ascii::digit0;
+    use winnow::Located;
 
     use rura_core::lir::ir::CtorDef;
     use rura_core::{Constant, PrimitiveType};
@@ -869,32 +870,34 @@ mod test {
     use super::*;
     #[test]
     fn test_eol_comment() {
-        let mut input = "// Hello, world!\n";
+        let mut input = Located::new("// Hello, world!\n");
         eol_comment(&mut input).unwrap();
-        assert_eq!(input, "\n");
+        assert_eq!(input.to_string(), "\n");
     }
     #[test]
     fn test_skip_space() {
-        let input = r#"
+        let input = Located::new(
+            r#"
           // Hello, world!
           /* sdad */
           213
           // Hello, world!
-        "#;
+        "#,
+        );
         let result = skip_space(digit0).parse(input);
         assert_eq!(result, Ok("213"));
     }
 
     #[test]
     fn test_parse_plain_type_var() {
-        let mut input = "@T";
+        let mut input = Located::new("@T");
         let result = parse_type_variable(&mut input);
         assert_eq!(result, Ok(TypeVar::Plain(Ident::new("T"))));
     }
 
     #[test]
     fn test_parse_associated_type_var() {
-        let mut input = "@T::U";
+        let mut input = Located::new("@T::U");
         let result = parse_type_variable(&mut input);
         assert_eq!(
             result,
@@ -904,7 +907,7 @@ mod test {
 
     #[test]
     fn test_parse_as_expr_type_var() {
-        let mut input = "@<@T::U as std::V>::W";
+        let mut input = Located::new("@<@T::U as std::V>::W");
         let result = parse_type_variable(&mut input);
         assert_eq!(
             result,
@@ -918,7 +921,7 @@ mod test {
 
     #[test]
     fn test_parse_tuple_of_scalars() {
-        let mut input = "(i32,f64)";
+        let mut input = Located::new("(i32,f64)");
         let result = parse_lir_type(&mut input);
         assert_eq!(
             result,
@@ -931,7 +934,7 @@ mod test {
 
     #[test]
     fn test_parse_object_type_without_params() {
-        let mut input = "std::Vec";
+        let mut input = Located::new("std::Vec");
         let result = parse_lir_type(&mut input);
         assert_eq!(
             result,
@@ -944,7 +947,7 @@ mod test {
 
     #[test]
     fn test_parse_object_type_with_params() {
-        let mut input = "std::Vec<i32, f64>";
+        let mut input = Located::new("std::Vec<i32, f64>");
         let result = parse_lir_type(&mut input);
         assert_eq!(
             result,
@@ -960,7 +963,7 @@ mod test {
 
     #[test]
     fn test_parse_closure_type() {
-        let mut input = "fn (i32, f64) -> i32";
+        let mut input = Located::new("fn (i32, f64) -> i32");
         let result = parse_lir_type(&mut input);
         assert_eq!(
             result,
@@ -976,7 +979,7 @@ mod test {
 
     #[test]
     fn test_parse_constant_float_instr() {
-        let mut input = "%1 = constant 3.14 : f64;";
+        let mut input = Located::new("%1 = constant 3.14 : f64;");
         let result = parse_constant_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -990,7 +993,7 @@ mod test {
 
     #[test]
     fn test_parse_usize() {
-        let mut input = "%1 = constant 3 : usize;";
+        let mut input = Located::new("%1 = constant 3 : usize;");
         let result = parse_constant_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1003,7 +1006,7 @@ mod test {
 
     #[test]
     fn test_parse_apply_instr() {
-        let mut input = "%1 = apply %2, %3;";
+        let mut input = Located::new("%1 = apply %2, %3;");
         let result = parse_apply_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1016,7 +1019,7 @@ mod test {
     }
     #[test]
     fn test_parse_tuple_intro_instr() {
-        let mut input = "%1 = ( %2, %3 );";
+        let mut input = Located::new("%1 = ( %2, %3 );");
         let result = parse_tuple_intro_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1029,7 +1032,7 @@ mod test {
 
     #[test]
     fn test_parse_tuple_elim_instr() {
-        let mut input = "( %1, %2 ) = %3;";
+        let mut input = Located::new("( %1, %2 ) = %3;");
         let result = parse_tuple_elim_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1042,7 +1045,7 @@ mod test {
 
     #[test]
     fn test_parse_unary_neg_instr() {
-        let mut input = "%1 = - %2;";
+        let mut input = Located::new("%1 = - %2;");
         let result = parse_unary_op('-', UnOp::Neg)
             .parse_next(&mut input)
             .unwrap();
@@ -1058,7 +1061,7 @@ mod test {
 
     #[test]
     fn test_parse_binary_wrapping_add_instr() {
-        let mut input = "%1 = %2 + %3 [wrapping];";
+        let mut input = Located::new("%1 = %2 + %3 [wrapping];");
         let result = parse_binary_op("+", BinOp::Add)
             .parse_next(&mut input)
             .unwrap();
@@ -1076,10 +1079,12 @@ mod test {
 
     #[test]
     fn test_parse_closure_hoas() {
-        let mut input = r#"%1 = ( %2 : i32, %3 : f64 ) -> i32 { 
+        let mut input = Located::new(
+            r#"%1 = ( %2 : i32, %3 : f64 ) -> i32 {
             %4 = constant 3 : i32;
             return %4;
-        };"#;
+        };"#,
+        );
         let result = parse_closure_hoas(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1103,13 +1108,15 @@ mod test {
 
     #[test]
     fn test_parse_if_then_else_instr_in_block() {
-        let mut text = r#"{
+        let mut text = Located::new(
+            r#"{
             %1 = constant true : bool;
             %2 = constant 3 : i32;
             %3 = constant 4 : i32;
             // block terminator
             if %1 { return %2; } else { return %3; }
-        }"#;
+        }"#,
+        );
         let result = parse_block(&mut text).unwrap();
         assert_eq!(
             result,
@@ -1137,7 +1144,7 @@ mod test {
 
     #[test]
     fn test_parse_fixpoint_eliminator_header() {
-        let mut input = r#"[fixpoint(%0)] std::Vec"#;
+        let mut input = Located::new(r#"[fixpoint(%0)] std::Vec"#);
         let result = parse_fixpoint_eliminator_header(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1150,7 +1157,7 @@ mod test {
 
     #[test]
     fn test_parse_unwrap_eliminator_header() {
-        let mut input = r#"[unwrap(%0)] std::Vec { head: %1, tail: %2 }"#;
+        let mut input = Located::new(r#"[unwrap(%0)] std::Vec { head: %1, tail: %2 }"#);
         let result = parse_unwrap_eliminator_header(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1169,7 +1176,7 @@ mod test {
 
     #[test]
     fn test_parse_mutation_eliminator_header() {
-        let mut input = r#"[mutation] std::Vec ([%2] %1, [%4] %3)"#;
+        let mut input = Located::new(r#"[mutation] std::Vec ([%2] %1, [%4] %3)"#);
         let result = parse_mutation_eliminator_header(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1192,10 +1199,12 @@ mod test {
     }
     #[test]
     fn test_parse_inductive_elimination_instr() {
-        let mut input = r#"match %0 {
+        let mut input = Located::new(
+            r#"match %0 {
             [fixpoint(%1)] std::Vec => { %2 = constant 3 : i32; return %2; }
             [unwrap(%3)] std::Vec { head: %4, tail: %5 } => { %6 = constant 4 : i32; return %6; }
-        }"#;
+        }"#,
+        );
         let result = parse_inductive_elimination_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1237,14 +1246,14 @@ mod test {
 
     #[test]
     fn test_parse_fill_instr() {
-        let mut input = r#"fill %1 <- %2;"#;
+        let mut input = Located::new(r#"fill %1 <- %2;"#);
         let result = parse_fill_instr(&mut input).unwrap();
         assert_eq!(result, Lir::Fill { hole: 1, value: 2 });
     }
 
     #[test]
     fn test_parse_call_instr() {
-        let mut input = r#"%1 = call test(%2, %3);"#;
+        let mut input = Located::new(r#"%1 = call test(%2, %3);"#);
         let result = parse_call_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1258,7 +1267,7 @@ mod test {
 
     #[test]
     fn test_parse_ctor_call_instr() {
-        let mut input = r#"%1 = new [%2] List @Cons(%4, %6);"#;
+        let mut input = Located::new(r#"%1 = new [%2] List @Cons(%4, %6);"#);
         let result = parse_ctor_call_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1276,12 +1285,14 @@ mod test {
 
     #[test]
     fn test_parse_clone_drop_in_block() {
-        let mut input = r#"{
+        let mut input = Located::new(
+            r#"{
             %1 = clone %2;
             drop %3;
             drop %4;
             drop %5;
-        }"#;
+        }"#,
+        );
         let result = parse_block(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1308,7 +1319,7 @@ mod test {
 
     #[test]
     fn test_parse_bounded_type_var() {
-        let mut input = r#"@T: std::TraitFoo + std::TraitBar<Head = ()>"#;
+        let mut input = Located::new(r#"@T: std::TraitFoo + std::TraitBar<Head = ()>"#);
         let result = parse_bounded_type_var(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1336,7 +1347,7 @@ mod test {
 
     #[test]
     fn test_parse_consant_unit_instr() {
-        let mut input = "%1 = constant () ;";
+        let mut input = Located::new("%1 = constant () ;");
         let result = parse_constant_instr(&mut input).unwrap();
         assert_eq!(
             result,
@@ -1348,7 +1359,9 @@ mod test {
     }
     #[test]
     fn test_parse_function_prototype() {
-        let mut test = r#"fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>"#;
+        let mut test = Located::new(
+            r#"fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>"#,
+        );
         let result = parse_function_prototype(&mut test).unwrap();
         assert_eq!(
             result,
@@ -1385,9 +1398,11 @@ mod test {
 
     #[test]
     fn test_parse_inductive_type_def() {
-        let mut test = r#"enum List<T>
+        let mut test = Located::new(
+            r#"enum List<T>
             where @T: Foo
-        { Nil, Cons(@T, List<@T>) }"#;
+        { Nil, Cons(@T, List<@T>) }"#,
+        );
         let result = parse_inductive_type_def(&mut test).unwrap();
         assert_eq!(
             result,
@@ -1403,10 +1418,12 @@ mod test {
                 }]),
                 ctors: Box::new([
                     CtorDef {
+                        span: 49..52,
                         name: "Nil".into(),
                         params: Box::new([])
                     },
                     CtorDef {
+                        span: 54..58,
                         name: "Cons".into(),
                         params: Box::new([
                             (
@@ -1429,7 +1446,7 @@ mod test {
 
     #[test]
     fn test_parse_cast_instr() {
-        let mut test = r#"%1 = cast %2 : i32;"#;
+        let mut test = Located::new(r#"%1 = cast %2 : i32;"#);
         let result = parse_cast_instr(&mut test).unwrap();
         assert_eq!(
             result,
@@ -1441,7 +1458,10 @@ mod test {
         );
     }
 
-    const MODULE: &str = r#"
+    #[test]
+    fn parse_module_test() {
+        let mut input = Located::new(
+            r#"
 module test {
     enum List<T>
         where @T: Foo
@@ -1463,10 +1483,8 @@ module test {
     }
     fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
 }
-"#;
-    #[test]
-    fn parse_module_test() {
-        let mut input = MODULE;
+"#,
+        );
         let module = parse_module(&mut input).unwrap();
         println!("{:#?}\n", module);
     }

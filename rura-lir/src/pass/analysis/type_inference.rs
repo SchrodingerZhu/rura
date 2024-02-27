@@ -9,7 +9,9 @@ use crate::pass::visitor::default_visit_function_def;
 use crate::pass::visitor::{LirVisitor, TracingContext, VisitorContext};
 use crate::pprint::PrettyPrint;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+use super::free_variable::get_free_variable;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct TypeInference {
     types: HashMap<QualifiedName, HashMap<usize, LirType>>,
 }
@@ -23,8 +25,8 @@ pub enum Error {
     UnknownOperandType(usize),
     #[error("{} is not a valid type to appear at Rura's function interface", PrettyPrint::new(&**.0))]
     InvalidInterfaceType(Box<LirType>),
-    #[error("closure %{0} captures an operand %{1} of an incompatible type {}", PrettyPrint::new(&**.2))]
-    IncompatibleCapture(usize, usize, Box<LirType>),
+    #[error("closure captures an operand %{0} of an incompatible type {}", PrettyPrint::new(&**.1))]
+    IncompatibleCapture(usize, Box<LirType>),
     #[error("operand %{0} contains unknown type variable in its type {}", PrettyPrint::new(&**.1))]
     UnknownTypeVar(usize, Box<LirType>),
     #[error("{} contains unknown type variable(s) in function interface", PrettyPrint::new(&**.0))]
@@ -45,6 +47,7 @@ pub struct TypeInferenceContext<'a> {
     context: Vec<VisitorContext<'a>>,
     errors: Vec<(VisitorContext<'a>, Error)>,
     current_function: HashMap<usize, LirType>,
+    should_continue: bool,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -56,9 +59,11 @@ impl<'a> TypeInferenceContext<'a> {
             context: vec![],
             errors: vec![],
             current_function: HashMap::new(),
+            should_continue: true,
         }
     }
     pub fn set_type(&mut self, operand: usize, ty: LirType) {
+        self.check_type_var_for_operand(operand, &ty);
         self.current_function.insert(operand, ty);
     }
     pub fn inconsistent_binary_operands(
@@ -72,6 +77,7 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::InconsistentBinaryOperands(lhs, Box::new(lhs_type), rhs, Box::new(rhs_type)),
         ));
+        self.should_continue = false;
     }
 
     pub fn unknown_operand_type(&mut self, operand: usize) {
@@ -79,6 +85,7 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::UnknownOperandType(operand),
         ));
+        self.should_continue = false;
     }
 
     pub fn invalid_interface_type(&mut self, arg_type: LirType) {
@@ -86,18 +93,15 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::InvalidInterfaceType(Box::new(arg_type)),
         ));
+        // could continue
     }
 
-    pub fn imcompatible_capture(
-        &mut self,
-        closure: usize,
-        operand: usize,
-        operand_type: &'a LirType,
-    ) {
+    pub fn imcompatible_capture(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::IncompatibleCapture(closure, operand, Box::new(operand_type.clone())),
+            Error::IncompatibleCapture(operand, Box::new(operand_type)),
         ));
+        // could continue
     }
 
     pub fn invalid_return_value(&mut self, operand: usize, operand_type: LirType) {
@@ -105,6 +109,7 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::InvalidReturnValue(operand, Box::new(operand_type)),
         ));
+        // could continue
     }
 
     pub fn invalid_cast_target(&mut self, target: LirType) {
@@ -112,9 +117,10 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::InvalidCastTarget(Box::new(target)),
         ));
+        // could continue
     }
 
-    fn check_type_var<F>(&mut self, error_maker: F, operand_type: &'a LirType)
+    fn check_type_var<F>(&mut self, error_maker: F, operand_type: &'_ LirType)
     where
         F: FnOnce(Box<LirType>) -> Error,
     {
@@ -175,10 +181,12 @@ impl<'a> TypeInferenceContext<'a> {
 
     fn check_type_var_in_interface(&mut self, arg_type: &'a LirType) {
         self.check_type_var(Error::UnknownTypeVarInInterface, arg_type);
+        // could continue
     }
 
-    fn check_type_var_for_operand(&mut self, operand: usize, operand_type: &'a LirType) {
+    fn check_type_var_for_operand(&mut self, operand: usize, operand_type: &'_ LirType) {
         self.check_type_var(|x| Error::UnknownTypeVar(operand, x), operand_type);
+        // could continue
     }
 
     fn invalid_function_argument(&mut self, operand: usize, operand_type: LirType) {
@@ -186,12 +194,14 @@ impl<'a> TypeInferenceContext<'a> {
             self.context.last().unwrap().clone(),
             Error::InvalidFunctionArgument(operand, Box::new(operand_type)),
         ));
+        // could continue
     }
     fn invalid_operand(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
             self.context.last().unwrap().clone(),
             Error::InvalidOperand(operand, Box::new(operand_type)),
         ));
+        self.should_continue = false;
     }
 }
 
@@ -224,6 +234,7 @@ impl LirVisitor for TypeInference {
         context: &mut TypeInferenceContext<'a>,
     ) {
         context.return_type = &function.prototype.return_type;
+        context.should_continue = true;
         // insert all type variables
         context.type_variables = function.prototype.type_params.iter().collect();
         context.check_type_var_in_interface(&function.prototype.return_type);
@@ -233,11 +244,10 @@ impl LirVisitor for TypeInference {
 
         // insert all arguments as known type
         for (op, ty) in function.prototype.params.iter() {
-            context.check_type_var_for_operand(*op, ty);
             if !ty.is_interface_compat() {
                 context.invalid_interface_type(ty.clone());
             }
-            context.current_function.insert(*op, ty.clone());
+            context.set_type(*op, ty.clone());
         }
         // continue to visit the body
         default_visit_function_def(self, function, context);
@@ -298,15 +308,74 @@ impl LirVisitor for TypeInference {
             Lir::Call(_) => todo!("figure out how to look up function type"),
             Lir::Clone { value, result } => {
                 let ty = get_type!(context, *value);
-                context.set_type(*result, ty.clone());
+                if !ty.is_object() {
+                    context.invalid_operand(*value, ty.clone());
+                } else {
+                    context.set_type(*result, ty.clone());
+                }
             }
             Lir::Closure(_) => unreachable!(),
-            Lir::Drop { value, token } => todo!(),
-            Lir::CtorCall(_) => todo!(),
+            Lir::Drop { value, token } => {
+                let ty = get_type!(context, *value);
+                match ty {
+                    LirType::Object(..) => {
+                        context.set_type(*value, LirType::Token(Box::new(ty.clone())));
+                    }
+                    LirType::Unique(inner) if inner.is_object() => {
+                        context.set_type(*value, inner.as_ref().clone());
+                    }
+                    _ => {
+                        context.invalid_operand(*value, ty.clone());
+                    }
+                }
+            }
+            Lir::CtorCall(call) => todo!("figure out how to look up inductive type"),
             Lir::InductiveElimination { .. } => unreachable!(),
-            Lir::Return { value } => todo!(),
-            Lir::TupleIntro { elements, result } => todo!(),
-            Lir::TupleElim { tuple, eliminator } => todo!(),
+            Lir::Return { value } => {
+                let ty = get_type!(context, *value);
+                if ty != context.return_type {
+                    context.invalid_return_value(*value, ty.clone());
+                }
+            }
+            Lir::TupleIntro { elements, result } => {
+                let mut inner_types = vec![];
+                for i in elements.iter().map(|x| {
+                    context
+                        .current_function
+                        .get(x)
+                        .filter(|x| x.is_materializable())
+                        .ok_or(*x)
+                        .cloned()
+                }) {
+                    match i {
+                        Ok(ty) => inner_types.push(ty),
+                        Err(operand) => {
+                            context.unknown_operand_type(operand);
+                            return;
+                        }
+                    }
+                }
+                context.set_type(*result, LirType::Tuple(inner_types.into_boxed_slice()));
+            }
+            Lir::TupleElim { tuple, eliminator } => {
+                let ty = get_type!(context, *tuple);
+                if let LirType::Tuple(inner) = ty {
+                    if eliminator.len() != inner.len() {
+                        context.invalid_operand(*tuple, ty.clone());
+                    } else {
+                        let target: Vec<_> = eliminator
+                            .iter()
+                            .copied()
+                            .zip(inner.iter().cloned())
+                            .collect();
+                        for (v, t) in target {
+                            context.set_type(v, t);
+                        }
+                    }
+                } else {
+                    context.invalid_operand(*tuple, ty.clone());
+                }
+            }
             Lir::UnaryOp(x) => {
                 let ty = get_type!(context, x.operand);
                 if matches!(x.op, rura_core::UnOp::Neg) && !ty.is_numeric() {
@@ -395,97 +464,161 @@ impl LirVisitor for TypeInference {
             }
         }
     }
-    // fn visit_if_then_else<'a>(
-    //     &mut self,
-    //     inner: &'a crate::lir::IfThenElse,
-    //     agent: &mut super::DiagnosticAgent<'a>,
-    // ) {
-    //     if !self.definitions.contains(&inner.condition) {
-    //         agent.add_diagnostic(
-    //             super::DiagnosticLevel::Error,
-    //             Error::Undefined(inner.condition),
-    //         );
-    //     }
-    //     agent.push_context(VisitorContext::ThenBlock);
-    //     self.new_scope();
-    //     self.visit_block(&inner.then_branch, agent);
-    //     self.pop_scope();
-    //     agent.pop_context();
-    //     agent.push_context(VisitorContext::ElseBlock);
-    //     self.new_scope();
-    //     self.visit_block(&inner.else_branch, agent);
-    //     self.pop_scope();
-    //     agent.pop_context();
-    // }
 
-    // fn visit_eliminator<'a>(
-    //     &mut self,
-    //     inductive: usize,
-    //     eliminator: &'a [crate::lir::InductiveEliminator],
-    //     agent: &mut super::DiagnosticAgent<'a>,
-    // ) {
-    //     if !self.definitions.contains(&inductive) {
-    //         agent.add_diagnostic(super::DiagnosticLevel::Error, Error::Undefined(inductive));
-    //     }
-    //     macro_rules! check_multiple_definitions {
-    //         ($x:expr) => {
-    //             if let Some(err) = self.define_variable($x) {
-    //                 agent.add_diagnostic(super::DiagnosticLevel::Error, err);
-    //             }
-    //         };
-    //     }
-    //     for elim in eliminator.iter() {
-    //         agent.push_context(VisitorContext::Eliminator(&elim.ctor));
-    //         self.new_scope();
-    //         match &elim.style {
-    //             crate::lir::EliminationStyle::Unwrap { fields, token } => {
-    //                 check_multiple_definitions!(*token);
-    //                 for (_, i) in fields.iter() {
-    //                     check_multiple_definitions!(*i);
-    //                 }
-    //             }
-    //             crate::lir::EliminationStyle::Mutation(recv) => {
-    //                 for i in recv.iter() {
-    //                     check_multiple_definitions!(i.value);
-    //                     check_multiple_definitions!(i.hole);
-    //                 }
-    //             }
-    //             crate::lir::EliminationStyle::Fixpoint(value) => {
-    //                 check_multiple_definitions!(*value);
-    //             }
-    //             crate::lir::EliminationStyle::Ref(fields) => {
-    //                 for (_, i) in fields.iter() {
-    //                     check_multiple_definitions!(*i);
-    //                 }
-    //             }
-    //         }
-    //         default_visit_block(self, &elim.body, agent);
-    //         self.pop_scope();
-    //         agent.pop_context();
-    //     }
-    // }
+    fn visit_block<'a>(
+        &mut self,
+        inner: &'a rura_core::lir::ir::Block,
+        context: &mut Self::Context<'a>,
+    ) {
+        for (i, instr) in inner.0.iter().enumerate() {
+            context.push_context(VisitorContext::Instruction(i));
+            match instr {
+                Lir::IfThenElse(inner) => self.visit_if_then_else(inner, context),
+                Lir::Closure(inner) => self.visit_closure(inner, context),
+                Lir::InductiveElimination {
+                    eliminator,
+                    inductive,
+                } => self.visit_eliminator(*inductive, eliminator, context),
+                _ => self.visit_normal_instruction(instr, context),
+            }
+            if !context.should_continue {
+                break;
+            }
+            context.pop_context();
+        }
+    }
+    fn visit_if_then_else<'a>(
+        &mut self,
+        inner: &'a rura_core::lir::ir::IfThenElse,
+        context: &mut Self::Context<'a>,
+    ) {
+        let condition_ty = get_type!(context, inner.condition);
+        if !condition_ty.is_boolean() {
+            context.invalid_operand(inner.condition, condition_ty.clone());
+        }
+        context.push_context(VisitorContext::ThenBlock);
+        self.visit_block(&inner.then_branch, context);
+        context.pop_context();
+        context.push_context(VisitorContext::ElseBlock);
+        self.visit_block(&inner.else_branch, context);
+        context.pop_context();
+    }
 
-    // fn visit_closure<'a>(
-    //     &mut self,
-    //     inner: &'a crate::lir::ClosureCreation,
-    //     agent: &mut super::DiagnosticAgent<'a>,
-    // ) {
-    //     self.new_scope();
-    //     for i in inner.params.iter().map(|x| x.0) {
-    //         if let Some(err) = self.define_variable(i) {
-    //             if self.defined_in_current_scope(i) {
-    //                 agent.add_diagnostic(super::DiagnosticLevel::Error, err);
-    //             } else {
-    //                 agent.add_diagnostic(super::DiagnosticLevel::Error, Error::Shadowed(i));
-    //             }
-    //         }
-    //     }
-    //     agent.push_context(VisitorContext::Closure);
-    //     self.visit_block(&inner.body, agent);
-    //     agent.pop_context();
-    //     self.pop_scope();
-    //     if let Some(err) = self.define_variable(inner.result) {
-    //         agent.add_diagnostic(super::DiagnosticLevel::Error, err);
-    //     }
-    // }
+    fn visit_eliminator<'a>(
+        &mut self,
+        inductive: usize,
+        eliminator: &'a [rura_core::lir::ir::InductiveEliminator],
+        context: &mut Self::Context<'a>,
+    ) {
+        todo!()
+    }
+
+    fn visit_closure<'a>(
+        &mut self,
+        inner: &'a rura_core::lir::ir::ClosureCreation,
+        context: &mut Self::Context<'a>,
+    ) {
+        context.push_context(VisitorContext::Closure);
+        let return_type = context.return_type;
+        context.return_type = &inner.return_type;
+        if !inner.return_type.is_interface_compat() {
+            context.invalid_interface_type(inner.return_type.clone());
+        }
+
+        for (op, ty) in inner.params.iter() {
+            if !ty.is_interface_compat() {
+                context.invalid_interface_type(ty.clone());
+            }
+            context.set_type(*op, ty.clone());
+        }
+
+        let captures = get_free_variable(inner);
+        for op in captures.iter() {
+            let ty = get_type!(context, *op);
+            if !ty.is_materializable() {
+                context.imcompatible_capture(*op, ty.clone());
+            }
+        }
+
+        self.visit_block(&inner.body, context);
+        context.return_type = return_type;
+        context.pop_context();
+        context.set_type(
+            inner.result,
+            LirType::Closure(
+                inner.params.iter().map(|(_, ty)| ty.clone()).collect(),
+                Box::new(inner.return_type.clone()),
+            ),
+        );
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{parser, pass::visitor::LirVisitor};
+
+    #[test]
+    fn test_return_numeric() {
+        let mut input = r#"
+        module typing {
+            fn test(%0 : i32) -> (i32, i32) {
+                %1 = constant 42 : i32;
+                %2 = %0 + %1;
+                %3 = (%0, %2);
+                return %3;
+            }
+        }
+        "#;
+        let module = parser::parse_module(&mut input).unwrap();
+        let mut visitor = super::TypeInference::default();
+        let mut context = super::TypeInferenceContext::new();
+        visitor.visit_module(&module, &mut context);
+        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
+        println!("{}", lexpr);
+        assert_eq!(context.errors.len(), 0);
+    }
+
+    #[test]
+    fn test_closure_apply() {
+        let mut input = r#"
+        module typing {
+            fn test(%0 : fn (i32, i32) -> i32, %1 : i32) -> fn(i32) -> i32 {
+                %2 = apply %0, %1;
+                return %2;
+            }
+        }
+        "#;
+        let module = parser::parse_module(&mut input).unwrap();
+        let mut visitor = super::TypeInference::default();
+        let mut context = super::TypeInferenceContext::new();
+        visitor.visit_module(&module, &mut context);
+        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
+        println!("{}", lexpr);
+        assert_eq!(context.errors.len(), 0);
+    }
+
+    #[test]
+    fn test_closure_capture() {
+        let mut input = r#"
+        module typing {
+            fn test(%0 : i32) -> fn(i32) -> i32 {
+                %2 = (%1 : i32) -> i32 {
+                    %3 = %0 + %1;
+                    return %3;
+                };
+                return %2;
+            }
+        }
+        "#;
+        let module = parser::parse_module(&mut input).unwrap();
+        let mut visitor = super::TypeInference::default();
+        let mut context = super::TypeInferenceContext::new();
+        visitor.visit_module(&module, &mut context);
+        let lexpr = serde_lexpr::to_string(&visitor).unwrap();
+        println!("{}", lexpr);
+        for (ctx, err) in context.errors.iter() {
+            println!("{:?} : {}", ctx, err);
+        }
+        assert_eq!(context.errors.len(), 0);
+    }
 }

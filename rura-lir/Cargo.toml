@@ -20,6 +20,9 @@ optional = true
 version = "1.0.197"
 features = ["derive"]
 
+[dependencies.serde-lexpr]
+version = "0.1.3"
+
 [dependencies.rura-core]
 path = "../rura-core"
 

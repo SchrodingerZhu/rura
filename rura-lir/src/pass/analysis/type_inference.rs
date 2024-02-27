@@ -12,28 +12,24 @@ struct TypeInference {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error<'a> {
-    #[error("binary operands %{0} : {1} and %{2} : {3} has inconsistent types")]
-    InconsistentBinaryOperands(
-        usize,
-        PrettyPrint<'a, LirType>,
-        usize,
-        PrettyPrint<'a, LirType>,
-    ),
+pub enum Error {
+    #[error("binary operands %{0} : {} and %{2} : {} has inconsistent types", 
+            PrettyPrint::new(&**.1), PrettyPrint::new(&**.3))]
+    InconsistentBinaryOperands(usize, Box<LirType>, usize, Box<LirType>),
     #[error("the type of operand %{0} is unknown when being used at this site")]
     UnknownOperandType(usize),
-    #[error("argument %{0} has invalid type {1} for a rura function")]
-    InvalidArgumentType(usize, PrettyPrint<'a, LirType>),
-    #[error("closure %{0} captures an operand %{1} of an imcompatible type {2}")]
-    ImcompatibleCapture(usize, usize, PrettyPrint<'a, LirType>),
-    #[error("operand %{0} contains unknown type variable in its type {1}")]
-    UnknownTypeVar(usize, PrettyPrint<'a, LirType>),
+    #[error("argument %{0} has invalid type {} for a rura function", PrettyPrint::new(&**.1))]
+    InvalidArgumentType(usize, Box<LirType>),
+    #[error("closure %{0} captures an operand %{1} of an imcompatible type {}", PrettyPrint::new(&**.2))]
+    ImcompatibleCapture(usize, usize, Box<LirType>),
+    #[error("operand %{0} contains unknown type variable in its type {}", PrettyPrint::new(&**.1))]
+    UnknownTypeVar(usize, Box<LirType>),
 }
 
 pub struct TypeInferenceContext<'a> {
     type_variables: HashSet<&'a Ident>,
     context: Vec<VisitorContext<'a>>,
-    errors: Vec<(VisitorContext<'a>, Error<'a>)>,
+    errors: Vec<(VisitorContext<'a>, Error)>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -41,16 +37,16 @@ impl<'a> TypeInferenceContext<'a> {
         &mut self,
         lhs: usize,
         rhs: usize,
-        lhs_type: &'a LirType,
-        rhs_type: &'a LirType,
+        lhs_type: &LirType,
+        rhs_type: &LirType,
     ) {
         self.errors.push((
             self.context.last().unwrap().clone(),
             Error::InconsistentBinaryOperands(
                 lhs,
-                PrettyPrint::new(lhs_type),
+                Box::new(lhs_type.clone()),
                 rhs,
-                PrettyPrint::new(rhs_type),
+                Box::new(rhs_type.clone()),
             ),
         ));
     }
@@ -62,10 +58,10 @@ impl<'a> TypeInferenceContext<'a> {
         ));
     }
 
-    pub fn invalid_argument_type(&mut self, arg: usize, arg_type: &'a LirType) {
+    pub fn invalid_argument_type(&mut self, arg: usize, arg_type: &LirType) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::InvalidArgumentType(arg, PrettyPrint::new(arg_type)),
+            Error::InvalidArgumentType(arg, Box::new(arg_type.clone())),
         ));
     }
 
@@ -77,7 +73,7 @@ impl<'a> TypeInferenceContext<'a> {
     ) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::ImcompatibleCapture(closure, operand, PrettyPrint::new(operand_type)),
+            Error::ImcompatibleCapture(closure, operand, Box::new(operand_type.clone())),
         ));
     }
 
@@ -130,7 +126,7 @@ impl<'a> TypeInferenceContext<'a> {
         if !recursively_check_typevar(operand_type, &self.type_variables) {
             self.errors.push((
                 self.context.last().unwrap().clone(),
-                Error::UnknownTypeVar(operand, PrettyPrint::new(operand_type)),
+                Error::UnknownTypeVar(operand, Box::new(operand_type.clone())),
             ));
         }
     }

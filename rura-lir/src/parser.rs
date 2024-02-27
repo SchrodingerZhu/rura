@@ -805,7 +805,7 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_parsing::{eol_comment, BinOp, PrimitiveType, UnOp};
+    use rura_parsing::{eol_comment, PrimitiveType};
     use winnow::ascii::digit0;
 
     use super::*;

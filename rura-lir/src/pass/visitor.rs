@@ -1,13 +1,14 @@
-use crate::{
-    lir::{FunctionPrototype, Lir, Module},
-    QualifiedName,
+use rura_core::lir::ir::{
+    Block, ClosureCreation, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
+    InductiveTypeDef, Lir, Module,
 };
+use rura_core::lir::QualifiedName;
 
 #[derive(Debug, Clone)]
 pub enum VisitorContext<'a> {
     Module(&'a QualifiedName),
     Function(&'a QualifiedName),
-    Instrution(usize),
+    Instruction(usize),
     Closure,
     ThenBlock,
     ElseBlock,
@@ -21,7 +22,7 @@ impl std::fmt::Display for VisitorContext<'_> {
         match self {
             VisitorContext::Module(name) => write!(f, "module {}", name),
             VisitorContext::Function(name) => write!(f, "function {}", name),
-            VisitorContext::Instrution(i) => write!(f, "instruction at {}", i),
+            VisitorContext::Instruction(i) => write!(f, "instruction at {}", i),
             VisitorContext::Closure => write!(f, "closure body"),
             VisitorContext::ThenBlock => write!(f, "then block"),
             VisitorContext::ElseBlock => write!(f, "else block"),
@@ -41,7 +42,7 @@ pub trait TracingContext<'a> {
 
 pub fn default_visit_function_def<'a, S: LirVisitor + ?Sized>(
     this: &mut S,
-    function: &'a crate::lir::FunctionDef,
+    function: &'a FunctionDef,
     context: &mut S::Context<'a>,
 ) {
     this.visit_block(&function.body, context);
@@ -49,11 +50,11 @@ pub fn default_visit_function_def<'a, S: LirVisitor + ?Sized>(
 
 pub fn default_visit_block<'a, S: LirVisitor + ?Sized>(
     this: &mut S,
-    function: &'a crate::lir::Block,
+    function: &'a Block,
     context: &mut S::Context<'a>,
 ) {
     for (i, instr) in function.0.iter().enumerate() {
-        context.push_context(VisitorContext::Instrution(i));
+        context.push_context(VisitorContext::Instruction(i));
         match instr {
             Lir::IfThenElse(inner) => this.visit_if_then_else(inner, context),
             Lir::Closure(inner) => this.visit_closure(inner, context),
@@ -69,7 +70,7 @@ pub fn default_visit_block<'a, S: LirVisitor + ?Sized>(
 
 pub fn default_visit_if_then_else<'a, S: LirVisitor + ?Sized>(
     this: &mut S,
-    inner: &'a crate::lir::IfThenElse,
+    inner: &'a IfThenElse,
     context: &mut S::Context<'a>,
 ) {
     context.push_context(VisitorContext::ThenBlock);
@@ -82,7 +83,7 @@ pub fn default_visit_if_then_else<'a, S: LirVisitor + ?Sized>(
 
 pub fn default_visit_closure<'a, S: LirVisitor + ?Sized>(
     this: &mut S,
-    inner: &'a crate::lir::ClosureCreation,
+    inner: &'a ClosureCreation,
     context: &mut S::Context<'a>,
 ) {
     context.push_context(VisitorContext::Closure);
@@ -93,7 +94,7 @@ pub fn default_visit_closure<'a, S: LirVisitor + ?Sized>(
 pub fn default_visit_eliminator<'a, S: LirVisitor + ?Sized>(
     this: &mut S,
     _inductive: usize,
-    eliminator: &'a [crate::lir::InductiveEliminator],
+    eliminator: &'a [InductiveEliminator],
     context: &mut S::Context<'a>,
 ) {
     for elim in eliminator.iter() {
@@ -128,32 +129,24 @@ pub fn default_visit_module<'a, S: LirVisitor + ?Sized>(
 pub trait LirVisitor {
     type Context<'a>: TracingContext<'a>;
 
-    fn visit_if_then_else<'a>(
-        &mut self,
-        inner: &'a crate::lir::IfThenElse,
-        context: &mut Self::Context<'a>,
-    ) {
+    fn visit_if_then_else<'a>(&mut self, inner: &'a IfThenElse, context: &mut Self::Context<'a>) {
         default_visit_if_then_else(self, inner, context);
     }
 
-    fn visit_closure<'a>(
-        &mut self,
-        inner: &'a crate::lir::ClosureCreation,
-        context: &mut Self::Context<'a>,
-    ) {
+    fn visit_closure<'a>(&mut self, inner: &'a ClosureCreation, context: &mut Self::Context<'a>) {
         default_visit_closure(self, inner, context);
     }
 
     fn visit_eliminator<'a>(
         &mut self,
         inductive: usize,
-        eliminator: &'a [crate::lir::InductiveEliminator],
+        eliminator: &'a [InductiveEliminator],
         context: &mut Self::Context<'a>,
     ) {
         default_visit_eliminator(self, inductive, eliminator, context);
     }
 
-    fn visit_block<'a>(&mut self, inner: &'a crate::lir::Block, context: &mut Self::Context<'a>) {
+    fn visit_block<'a>(&mut self, inner: &'a Block, context: &mut Self::Context<'a>) {
         default_visit_block(self, inner, context);
     }
 
@@ -171,14 +164,14 @@ pub trait LirVisitor {
     #[allow(unused_variables)]
     fn visit_inductive_typedef<'a>(
         &mut self,
-        typedef: &'a crate::lir::InductiveTypeDef,
+        typedef: &'a InductiveTypeDef,
         context: &mut Self::Context<'a>,
     ) {
     }
     #[allow(unused_variables)]
     fn visit_function_def<'a>(
         &mut self,
-        function: &'a crate::lir::FunctionDef,
+        function: &'a FunctionDef,
         context: &mut Self::Context<'a>,
     ) {
         default_visit_function_def(self, function, context);
@@ -186,7 +179,7 @@ pub trait LirVisitor {
     #[allow(unused_variables)]
     fn visit_normal_instruction<'a>(
         &mut self,
-        instruction: &'a crate::lir::Lir,
+        instruction: &'a Lir,
         context: &mut Self::Context<'a>,
     ) {
     }

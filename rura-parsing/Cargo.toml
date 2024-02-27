@@ -6,4 +6,6 @@ edition = "2021"
 [dependencies]
 winnow = "0.6.2"
 unicode-ident = "1.0.12"
-serde = { version = "1.0.197", features = ["derive"] }
+
+[dependencies.rura-core]
+path = "../rura-core"

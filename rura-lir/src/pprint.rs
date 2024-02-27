@@ -1,14 +1,12 @@
-use std::fmt::{Display, Formatter};
-
-use rura_parsing::{fmt_delimited, fmt_separated, keywords, Constant, Member};
-
-use crate::lir::{
+use rura_core::lir::ir::{
     ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
     FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
     InductiveTypeDef, Lir, MakeMutReceiver, Module, TraitExpr, UnaryOp,
 };
-use crate::types::{LirType, TypeVar};
-use crate::{Ident, QualifiedName};
+use rura_core::lir::types::{LirType, TypeVar};
+use rura_core::lir::{Ident, QualifiedName};
+use rura_core::{fmt_delimited, fmt_separated, keywords, Constant, Member};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PrettyPrint<'a, T> {
@@ -544,9 +542,13 @@ impl Display for PrettyPrint<'_, Module> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use rura_core::lir::ir::Lir;
+    use rura_core::{BinOp, PrimitiveType, UnOp};
+
     use crate::parser::parse_module;
-    use rura_parsing::{BinOp, PrimitiveType, UnOp};
+
+    use super::*;
+
     fn assert_type_eq(ty: &LirType) {
         let src = format!("module test {{ fn test() -> {}; }}", PrettyPrint::new(ty));
         let mut input = src.as_str();

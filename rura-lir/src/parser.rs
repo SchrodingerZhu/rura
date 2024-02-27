@@ -3,20 +3,22 @@ use winnow::combinator::{alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
-use rura_parsing::keywords::{BOTTOM, UNIT};
-use rura_parsing::{
-    constructor, expect, function_type, identifier, keywords, opt_or_default, parenthesized,
-    primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
-    type_parameters, ws_or_comment, BinOp, Constant, Member, UnOp,
-};
-
-use crate::lir::{
+use rura_core::keywords;
+use rura_core::keywords::{BOTTOM, UNIT};
+use rura_core::lir::ir::{
     ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
     FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator, InductiveTypeDef, Lir,
     MakeMutReceiver, Module, RefField, TraitExpr, UnaryOp,
 };
-use crate::types::{LirType, TypeVar};
-use crate::{Ident, QualifiedName};
+use rura_core::lir::types::{LirType, TypeVar};
+use rura_core::lir::{Ident, QualifiedName};
+use rura_core::Constant;
+use rura_core::{BinOp, Member, UnOp};
+use rura_parsing::{
+    constructor, expect, function_type, identifier, opt_or_default, parenthesized, primitive_type,
+    qualified_name, reference_type, skip_space, tuple_type, type_arguments, type_parameters,
+    ws_or_comment,
+};
 
 fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
     ("◊", parse_lir_type)
@@ -807,9 +809,9 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 mod test {
     use winnow::ascii::digit0;
 
-    use rura_parsing::{eol_comment, PrimitiveType};
-
-    use crate::lir::CtorDef;
+    use rura_core::lir::ir::CtorDef;
+    use rura_core::{Constant, PrimitiveType};
+    use rura_parsing::eol_comment;
 
     use super::*;
     #[test]

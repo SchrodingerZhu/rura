@@ -9,16 +9,19 @@ winnow-debug = ["winnow/debug"]
 colorful-diagnostic = ["dep:nu-ansi-term"]
 
 [dependencies]
-proc-macro2 = "1.0.78"
-quote = "1.0.35"
 winnow = "0.6.2"
 thiserror = "1.0.57"
-nu-ansi-term = { version = "0.50.0", optional = true }
-serde = { version = "1.0.197", features = ["derive"] }
+
+[dependencies.nu-ansi-term]
+version = "0.50.0"
+optional = true
+
+[dependencies.serde]
+version = "1.0.197"
+features = ["derive"]
+
+[dependencies.rura-core]
+path = "../rura-core"
 
 [dependencies.rura-parsing]
 path = "../rura-parsing"
-
-[dev-dependencies]
-prettyplease = "0.2.16"
-syn = "2.0.50"

@@ -1,0 +1,16 @@
+[package]
+name = "rura-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-macro2 = "1.0.78"
+quote = "1.0.35"
+
+[dependencies.serde]
+version = "1.0.197"
+features = ["derive"]
+
+[dev-dependencies]
+prettyplease = "0.2.16"
+syn = "2.0.51"

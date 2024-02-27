@@ -1,6 +1,7 @@
 use std::fmt::{Display, Write};
 
-use crate::{fmt_separated, lir::Module};
+use rura_core::fmt_separated;
+use rura_core::lir::ir::Module;
 
 use super::{
     visitor::{LirVisitor, TracingContext, VisitorContext},

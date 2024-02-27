@@ -1,3 +1,6 @@
+use rura_core::lir::ir::{
+    ClosureCreation, EliminationStyle, FunctionDef, IfThenElse, InductiveEliminator, Lir,
+};
 use std::{
     collections::HashSet,
     fmt::{Display, Formatter},
@@ -97,7 +100,7 @@ impl LirVisitor for VariableDefinition {
     type Context<'a> = super::DiagnosticAgent<'a>;
     fn visit_function_def<'a>(
         &mut self,
-        function: &'a crate::lir::FunctionDef,
+        function: &'a FunctionDef,
         context: &mut super::DiagnosticAgent<'a>,
     ) {
         self.ever_defined.clear();
@@ -112,7 +115,7 @@ impl LirVisitor for VariableDefinition {
     }
     fn visit_normal_instruction<'a>(
         &mut self,
-        instruction: &'a crate::lir::Lir,
+        instruction: &'a Lir,
         context: &mut super::DiagnosticAgent<'a>,
     ) {
         for used in instruction
@@ -129,7 +132,7 @@ impl LirVisitor for VariableDefinition {
     }
     fn visit_if_then_else<'a>(
         &mut self,
-        inner: &'a crate::lir::IfThenElse,
+        inner: &'a IfThenElse,
         agent: &mut super::DiagnosticAgent<'a>,
     ) {
         if !self.definitions.contains(&inner.condition) {
@@ -153,7 +156,7 @@ impl LirVisitor for VariableDefinition {
     fn visit_eliminator<'a>(
         &mut self,
         inductive: usize,
-        eliminator: &'a [crate::lir::InductiveEliminator],
+        eliminator: &'a [InductiveEliminator],
         agent: &mut super::DiagnosticAgent<'a>,
     ) {
         if !self.definitions.contains(&inductive) {
@@ -170,22 +173,22 @@ impl LirVisitor for VariableDefinition {
             agent.push_context(VisitorContext::Eliminator(&elim.ctor));
             self.new_scope();
             match &elim.style {
-                crate::lir::EliminationStyle::Unwrap { fields, token } => {
+                EliminationStyle::Unwrap { fields, token } => {
                     check_multiple_definitions!(*token);
                     for (_, i) in fields.iter() {
                         check_multiple_definitions!(*i);
                     }
                 }
-                crate::lir::EliminationStyle::Mutation(recv) => {
+                EliminationStyle::Mutation(recv) => {
                     for i in recv.iter() {
                         check_multiple_definitions!(i.value);
                         check_multiple_definitions!(i.hole);
                     }
                 }
-                crate::lir::EliminationStyle::Fixpoint(value) => {
+                EliminationStyle::Fixpoint(value) => {
                     check_multiple_definitions!(*value);
                 }
-                crate::lir::EliminationStyle::Ref(fields) => {
+                EliminationStyle::Ref(fields) => {
                     for (_, i) in fields.iter() {
                         check_multiple_definitions!(*i);
                     }
@@ -199,7 +202,7 @@ impl LirVisitor for VariableDefinition {
 
     fn visit_closure<'a>(
         &mut self,
-        inner: &'a crate::lir::ClosureCreation,
+        inner: &'a ClosureCreation,
         agent: &mut super::DiagnosticAgent<'a>,
     ) {
         self.new_scope();

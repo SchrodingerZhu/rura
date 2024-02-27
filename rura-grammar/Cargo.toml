@@ -6,5 +6,8 @@ edition = "2021"
 [dependencies]
 winnow = "0.6.2"
 
+[dependencies.rura-core]
+path = "../rura-core"
+
 [dependencies.rura-parsing]
 path = "../rura-parsing"

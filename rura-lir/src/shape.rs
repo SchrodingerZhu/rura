@@ -1,10 +1,9 @@
-use rura_parsing::PrimitiveType;
 use std::{any::Any, collections::HashMap, ops::Deref, rc::Rc};
 
-use crate::lir::InductiveTypeDef;
-use crate::types::LirType;
-use crate::HashMapProxy;
-use crate::{types::TypeVar, Ident};
+use rura_core::lir::ir::InductiveTypeDef;
+use rura_core::lir::types::{LirType, TypeVar};
+use rura_core::lir::{HashMapProxy, Ident};
+use rura_core::PrimitiveType;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Layout(std::alloc::Layout);
@@ -229,12 +228,12 @@ pub fn compare_shapes(a: &Shape, b: &Shape) -> ShapeSimilarity {
 
 #[cfg(test)]
 mod test {
-    use rura_parsing::Member;
+    use rura_core::lir::ir::CtorDef;
+    use rura_core::lir::QualifiedName;
+    use rura_core::Member;
+    use rura_core::PrimitiveType;
 
-    use crate::lir::CtorDef;
     use crate::pprint::PrettyPrint;
-    use crate::types::*;
-    use crate::QualifiedName;
 
     use super::*;
 

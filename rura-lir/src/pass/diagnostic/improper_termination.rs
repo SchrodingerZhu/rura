@@ -2,6 +2,7 @@ use crate::pass::{
     visitor::{default_visit_block, LirVisitor},
     Pass,
 };
+use rura_core::lir::ir::Block;
 
 use super::DiagnosticPass;
 
@@ -15,11 +16,7 @@ impl Pass for ImproperTermination {
 
 impl LirVisitor for ImproperTermination {
     type Context<'a> = super::DiagnosticAgent<'a>;
-    fn visit_block<'a>(
-        &mut self,
-        inner: &'a crate::lir::Block,
-        agent: &mut super::DiagnosticAgent<'a>,
-    ) {
+    fn visit_block<'a>(&mut self, inner: &'a Block, agent: &mut super::DiagnosticAgent<'a>) {
         if !inner.is_terminated() {
             agent.add_diagnostic(
                 super::DiagnosticLevel::Error,

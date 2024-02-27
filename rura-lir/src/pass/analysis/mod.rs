@@ -1,7 +1,7 @@
 #![allow(unused)]
 use std::{any::Any, fmt::Write};
 
-use rura_parsing::QualifiedName;
+use rura_core::lir::QualifiedName;
 
 pub mod free_variable;
 pub mod type_inference;

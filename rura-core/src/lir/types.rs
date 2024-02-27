@@ -1,8 +1,7 @@
 use std::{fmt::Display, fmt::Formatter};
 
-use rura_parsing::PrimitiveType;
-
-use crate::{Ident, QualifiedName};
+use crate::lir::{Ident, QualifiedName};
+use crate::PrimitiveType;
 
 #[derive(
     Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,

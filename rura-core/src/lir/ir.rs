@@ -3,14 +3,12 @@ use std::hash::Hash;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use rura_parsing::{BinOp, Constant, Constructor, Member, UnOp};
-
-use crate::pass::analysis::free_variable::get_free_variable;
-use crate::types::{LirType, TypeVar};
-use crate::{Ident, QualifiedName};
+use crate::lir::types::{LirType, TypeVar};
+use crate::lir::{Ident, QualifiedName};
+use crate::{BinOp, Constant, Constructor, Member, UnOp};
 
 /**
- * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for `rura`.
+ * LIR (Low-level Intermediate Representation) is a low-level intermediate representation designed for Rura.
  */
 
 #[repr(transparent)]
@@ -396,12 +394,6 @@ macro_rules! box_iter {
     (@ $x:expr) => {
         Box::new($x)
     };
-}
-
-impl ClosureCreation {
-    pub fn free_operands(&self) -> Vec<usize> {
-        get_free_variable(self).into_iter().collect()
-    }
 }
 
 impl Lir {

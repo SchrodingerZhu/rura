@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use rura_core::lir::ir::{ClosureCreation, EliminationStyle, IfThenElse, InductiveEliminator, Lir};
+
 use crate::pass::visitor::{default_visit_block, LirVisitor, TracingContext, VisitorContext};
 
 struct FreeOperandVisitor {
@@ -49,19 +51,7 @@ impl TracingContext<'_> for FakeContext {
 impl LirVisitor for FreeOperandVisitor {
     type Context<'a> = FakeContext;
 
-    fn visit_normal_instruction(&mut self, instruction: &crate::lir::Lir, _: &mut FakeContext) {
-        instruction
-            .using_operands()
-            .filter(|x| !self.definitions.contains(x))
-            .for_each(|x| {
-                self.free.insert(x);
-            });
-        instruction
-            .defining_operand()
-            .for_each(|x| self.define_variable(x));
-    }
-
-    fn visit_if_then_else(&mut self, inner: &crate::lir::IfThenElse, ctx: &mut FakeContext) {
+    fn visit_if_then_else(&mut self, inner: &IfThenElse, ctx: &mut FakeContext) {
         if !self.definitions.contains(&inner.condition) {
             self.free.insert(inner.condition);
         }
@@ -73,10 +63,20 @@ impl LirVisitor for FreeOperandVisitor {
         self.pop_scope();
     }
 
+    fn visit_closure(&mut self, inner: &ClosureCreation, agent: &mut FakeContext) {
+        self.new_scope();
+        for i in inner.params.iter().map(|x| x.0) {
+            self.define_variable(i);
+        }
+        self.visit_block(&inner.body, agent);
+        self.pop_scope();
+        self.define_variable(inner.result);
+    }
+
     fn visit_eliminator(
         &mut self,
         inductive: usize,
-        eliminator: &[crate::lir::InductiveEliminator],
+        eliminator: &[InductiveEliminator],
         ctx: &mut FakeContext,
     ) {
         if !self.definitions.contains(&inductive) {
@@ -85,22 +85,22 @@ impl LirVisitor for FreeOperandVisitor {
         for elim in eliminator.iter() {
             self.new_scope();
             match &elim.style {
-                crate::lir::EliminationStyle::Unwrap { fields, token } => {
+                EliminationStyle::Unwrap { fields, token } => {
                     self.define_variable(*token);
                     for (_, i) in fields.iter() {
                         self.define_variable(*i);
                     }
                 }
-                crate::lir::EliminationStyle::Mutation(recv) => {
+                EliminationStyle::Mutation(recv) => {
                     for i in recv.iter() {
                         self.define_variable(i.value);
                         self.define_variable(i.hole);
                     }
                 }
-                crate::lir::EliminationStyle::Fixpoint(value) => {
+                EliminationStyle::Fixpoint(value) => {
                     self.define_variable(*value);
                 }
-                crate::lir::EliminationStyle::Ref(fields) => {
+                EliminationStyle::Ref(fields) => {
                     for (_, i) in fields.iter() {
                         self.define_variable(*i);
                     }
@@ -111,18 +111,20 @@ impl LirVisitor for FreeOperandVisitor {
         }
     }
 
-    fn visit_closure(&mut self, inner: &crate::lir::ClosureCreation, agent: &mut FakeContext) {
-        self.new_scope();
-        for i in inner.params.iter().map(|x| x.0) {
-            self.define_variable(i);
-        }
-        self.visit_block(&inner.body, agent);
-        self.pop_scope();
-        self.define_variable(inner.result);
+    fn visit_normal_instruction(&mut self, instruction: &Lir, _: &mut FakeContext) {
+        instruction
+            .using_operands()
+            .filter(|x| !self.definitions.contains(x))
+            .for_each(|x| {
+                self.free.insert(x);
+            });
+        instruction
+            .defining_operand()
+            .for_each(|x| self.define_variable(x));
     }
 }
 
-pub fn get_free_variable(closure: &crate::lir::ClosureCreation) -> HashSet<usize> {
+pub fn get_free_variable(closure: &ClosureCreation) -> HashSet<usize> {
     let mut visitor = FreeOperandVisitor::new();
     visitor.visit_closure(closure, &mut FakeContext);
     visitor.free
@@ -130,7 +132,8 @@ pub fn get_free_variable(closure: &crate::lir::ClosureCreation) -> HashSet<usize
 
 #[cfg(test)]
 mod test {
-    use crate::{lir::Lir, parser::parse_module};
+    use crate::parser::parse_module;
+    use rura_core::lir::ir::Lir;
 
     use super::get_free_variable;
 
@@ -150,10 +153,10 @@ mod test {
             }
         "#;
         let module = parse_module(&mut input).unwrap();
-        let Lir::Closure(clsoure) = &module.functions[0].body.0[1] else {
+        let Lir::Closure(closure) = &module.functions[0].body.0[1] else {
             panic!("Expected a closure");
         };
-        let free = get_free_variable(clsoure);
+        let free = get_free_variable(closure);
         assert_eq!(free, [0].iter().cloned().collect());
     }
 }

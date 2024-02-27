@@ -41,21 +41,19 @@ pub struct TypeInferenceContext<'a> {
 }
 
 impl<'a> TypeInferenceContext<'a> {
+    pub fn set_type(&mut self, operand: usize, ty: LirType) {
+        self.current_function.insert(operand, ty);
+    }
     pub fn inconsistent_binary_operands(
         &mut self,
         lhs: usize,
         rhs: usize,
-        lhs_type: &LirType,
-        rhs_type: &LirType,
+        lhs_type: LirType,
+        rhs_type: LirType,
     ) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::InconsistentBinaryOperands(
-                lhs,
-                Box::new(lhs_type.clone()),
-                rhs,
-                Box::new(rhs_type.clone()),
-            ),
+            Error::InconsistentBinaryOperands(lhs, Box::new(lhs_type), rhs, Box::new(rhs_type)),
         ));
     }
 
@@ -66,10 +64,10 @@ impl<'a> TypeInferenceContext<'a> {
         ));
     }
 
-    pub fn invalid_argument_type(&mut self, arg_type: &LirType) {
+    pub fn invalid_interface_type(&mut self, arg_type: LirType) {
         self.errors.push((
             self.context.last().unwrap().clone(),
-            Error::InvalidInterfaceType(Box::new(arg_type.clone())),
+            Error::InvalidInterfaceType(Box::new(arg_type)),
         ));
     }
 
@@ -132,6 +130,7 @@ impl<'a> TypeInferenceContext<'a> {
                 },
                 LirType::Hole(inner) => recursively_check_typevar(inner, set),
                 LirType::Ref(inner) => recursively_check_typevar(inner, set),
+                LirType::Token(inner) => recursively_check_typevar(inner, set),
             }
         }
         if !recursively_check_typevar(operand_type, &self.type_variables) {
@@ -195,10 +194,16 @@ impl LirVisitor for TypeInference {
         // insert all type variables
         context.type_variables = function.prototype.type_params.iter().collect();
         context.check_type_var_in_interface(&function.prototype.return_type);
+        if !function.prototype.return_type.is_materializable() {
+            context.invalid_interface_type(function.prototype.return_type.clone());
+        }
 
         // insert all arguments as known type
         for (op, ty) in function.prototype.params.iter() {
             context.check_type_var_for_operand(*op, ty);
+            if !ty.is_materializable() {
+                context.invalid_interface_type(ty.clone());
+            }
             context.current_function.insert(*op, ty.clone());
         }
         // continue to visit the body
@@ -236,14 +241,35 @@ impl LirVisitor for TypeInference {
                     let ty = LirType::Closure(params, ret.clone());
                     context.current_function.insert(*result, ty);
                 } else {
-                    context
-                        .current_function
-                        .insert(*result, ret.as_ref().clone());
+                    context.set_type(*result, ret.as_ref().clone());
                 }
             }
-            crate::lir::Lir::BinaryOp(op) => todo!(),
+            crate::lir::Lir::BinaryOp(op) => {
+                let lhs_type = get_type!(context, op.lhs);
+                let rhs_type = get_type!(context, op.rhs);
+                if lhs_type != rhs_type {
+                    context.inconsistent_binary_operands(
+                        op.lhs,
+                        op.rhs,
+                        lhs_type.clone(),
+                        rhs_type.clone(),
+                    );
+                    return;
+                }
+                if op.is_arithmetic() || op.is_bitwise() {
+                    context.set_type(op.result, lhs_type.clone());
+                } else {
+                    context.set_type(
+                        op.result,
+                        LirType::Primitive(rura_parsing::PrimitiveType::Bool),
+                    );
+                }
+            }
             crate::lir::Lir::Call(_) => todo!("figure out how to look up function type"),
-            crate::lir::Lir::Clone { value, result } => todo!(),
+            crate::lir::Lir::Clone { value, result } => {
+                let ty = get_type!(context, *value);
+                context.set_type(*result, ty.clone());
+            }
             crate::lir::Lir::Closure(_) => unreachable!(),
             crate::lir::Lir::Drop { value, token } => todo!(),
             crate::lir::Lir::CtorCall(_) => todo!(),

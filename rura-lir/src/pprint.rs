@@ -80,6 +80,7 @@ impl Display for PrettyPrint<'_, LirType> {
             LirType::TypeVar(var) => write!(f, "{}", PrettyPrint::new(var)),
             LirType::Hole(ty) => write!(f, "◊{}", PrettyPrint::new(&**ty)),
             LirType::Ref(ty) => write!(f, "&{}", PrettyPrint::new(&**ty)),
+            LirType::Token(ty) => write!(f, "↻{}", PrettyPrint::new(&**ty)),
         }
     }
 }

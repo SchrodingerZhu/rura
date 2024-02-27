@@ -24,6 +24,12 @@ fn parse_type_hole(i: &mut &str) -> PResult<LirType> {
         .parse_next(i)
 }
 
+fn parse_reuse_token_type(i: &mut &str) -> PResult<LirType> {
+    ("↻", parse_lir_type)
+        .map(|(_, x)| LirType::Token(Box::new(x)))
+        .parse_next(i)
+}
+
 fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
     (
         qualified_name,
@@ -40,6 +46,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         tuple_type(parse_lir_type),
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
+        parse_reuse_token_type,
         reference_type(parse_lir_type).map(LirType::Ref),
         function_type(parse_lir_type),
         parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),

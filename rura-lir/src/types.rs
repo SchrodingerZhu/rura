@@ -44,6 +44,8 @@ pub enum LirType {
     Hole(Box<Self>),
     /// Immutable reference
     Ref(Box<Self>),
+    /// Reuse Token
+    Token(Box<Self>),
 }
 
 impl LirType {
@@ -59,6 +61,7 @@ impl LirType {
             LirType::TypeVar(_) => true,
             LirType::Hole(_) => false,
             LirType::Ref(_) => false,
+            LirType::Token(_) => false,
         }
     }
 }

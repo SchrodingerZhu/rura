@@ -53,6 +53,8 @@ pub enum ShapeError {
     HoleType,
     #[error("Bottom type does not have a shape")]
     BottomType,
+    #[error("Token type is not materializable")]
+    TokenType,
     #[error("Ref type is not materializable")]
     RefType,
     #[error("Inductive type is not fully applied")]
@@ -152,6 +154,7 @@ pub fn get_value_shape<'a, 'b: 'a>(
         },
         LirType::Hole(..) => Err(ShapeError::HoleType),
         LirType::Ref(..) => Err(ShapeError::RefType),
+        LirType::Token(..) => Err(ShapeError::TokenType),
     }
 }
 

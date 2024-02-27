@@ -72,6 +72,12 @@ impl LirType {
             _ => false,
         }
     }
+    pub fn is_unique(&self) -> bool {
+        matches!(self, LirType::Unique(_))
+    }
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, LirType::Primitive(PrimitiveType::Bool))
+    }
     pub fn is_interface_compat(&self) -> bool {
         if let LirType::Unique(x) = self {
             x.is_object() && x.is_materializable()

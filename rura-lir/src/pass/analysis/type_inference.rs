@@ -307,7 +307,16 @@ impl LirVisitor for TypeInference {
             Lir::Return { value } => todo!(),
             Lir::TupleIntro { elements, result } => todo!(),
             Lir::TupleElim { tuple, eliminator } => todo!(),
-            Lir::UnaryOp(_) => todo!(),
+            Lir::UnaryOp(x) => {
+                let ty = get_type!(context, x.operand);
+                if matches!(x.op, rura_core::UnOp::Neg) && !ty.is_numeric() {
+                    context.invalid_operand(x.operand, ty.clone());
+                } else if matches!(x.op, rura_core::UnOp::Not) && !ty.is_boolean() {
+                    context.invalid_operand(x.operand, ty.clone());
+                } else {
+                    context.set_type(x.result, ty.clone());
+                }
+            }
             Lir::IfThenElse(_) => unreachable!(),
             Lir::Constant { value, result } => {
                 let ty = match **value {
@@ -346,10 +355,29 @@ impl LirVisitor for TypeInference {
                     context.invalid_operand(*value, value_type.clone());
                 }
             }
-            Lir::Curry { function, result } => todo!(),
+            Lir::Curry { function, result } => {
+                todo!("implement after function prototype lookup is ready")
+            }
             Lir::Unreachable { panic } => {}
-            Lir::RcToUnique { value, result } => todo!(),
-            Lir::UniqueToRc { value, result } => todo!(),
+            Lir::RcToUnique { value, result } => {
+                let ty = get_type!(context, *value);
+                if !ty.is_object() {
+                    context.invalid_operand(*value, ty.clone());
+                } else {
+                    context.set_type(*result, LirType::Unique(Box::new(ty.clone())));
+                }
+            }
+            Lir::UniqueToRc { value, result } => {
+                let ty = get_type!(context, *value);
+                match ty {
+                    LirType::Unique(inner) => {
+                        context.set_type(*result, inner.as_ref().clone());
+                    }
+                    _ => {
+                        context.invalid_operand(*value, ty.clone());
+                    }
+                }
+            }
             Lir::Cast {
                 value,
                 result,

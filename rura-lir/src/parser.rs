@@ -5,15 +5,15 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, UNIT};
 use rura_parsing::{
-    expect, function_type, identifier, keywords, members, opt_or_default, parenthesized,
+    constructor, expect, function_type, identifier, keywords, opt_or_default, parenthesized,
     primitive_type, qualified_name, reference_type, skip_space, tuple_type, type_arguments,
     type_parameters, ws_or_comment, BinOp, Constant, Member, UnOp,
 };
 
 use crate::lir::{
-    ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, CtorDef, EliminationStyle,
-    FunctionCall, FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator,
-    InductiveTypeDef, Lir, MakeMutReceiver, Module, RefField, TraitExpr, UnaryOp,
+    ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
+    FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator, InductiveTypeDef, Lir,
+    MakeMutReceiver, Module, RefField, TraitExpr, UnaryOp,
 };
 use crate::types::{LirType, TypeVar};
 use crate::{Ident, QualifiedName};
@@ -731,13 +731,6 @@ fn parse_extern_function_def(i: &mut &str) -> PResult<FunctionPrototype> {
         .parse_next(i)
 }
 
-fn parse_ctor_def(i: &mut &str) -> PResult<CtorDef> {
-    (identifier, skip_space(members(parse_lir_type)))
-        .map(|(name, params)| CtorDef { name, params })
-        .context(expect("constructor definition"))
-        .parse_next(i)
-}
-
 fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
     let bounds = opt((
         "where",
@@ -745,7 +738,7 @@ fn parse_inductive_type_def(i: &mut &str) -> PResult<InductiveTypeDef> {
     ))
     .context(expect("type bounds"))
     .map(|x| Vec::into_boxed_slice(x.unwrap_or_default().1));
-    let ctors = separated(1.., skip_space(parse_ctor_def), ",")
+    let ctors = separated(1.., skip_space(constructor(parse_lir_type)), ",")
         .context(expect("constructors"))
         .map(Vec::into_boxed_slice);
     (
@@ -812,8 +805,11 @@ pub fn parse_module(i: &mut &str) -> PResult<Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_parsing::{eol_comment, PrimitiveType};
     use winnow::ascii::digit0;
+
+    use rura_parsing::{eol_comment, PrimitiveType};
+
+    use crate::lir::CtorDef;
 
     use super::*;
     #[test]

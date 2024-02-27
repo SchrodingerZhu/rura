@@ -808,6 +808,16 @@ where
     .context(expect("unnamed members"))
 }
 
+pub fn constructor<'a, F, I, T>(typ: F) -> impl Parser<&'a str, Constructor<I, T>, ContextError>
+where
+    F: Copy + Parser<&'a str, T, ContextError>,
+    I: From<&'a str>,
+{
+    (identifier, skip_space(members(typ)))
+        .map(|(name, params)| Constructor { name, params })
+        .context(expect("constructor"))
+}
+
 pub fn function_parameters<'a, F, I, T, P>(typ: F) -> impl Parser<&'a str, Box<[P]>, ContextError>
 where
     F: Parser<&'a str, T, ContextError>,

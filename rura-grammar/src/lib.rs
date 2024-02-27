@@ -9,8 +9,8 @@ use winnow::{PResult, Parser};
 
 use rura_parsing::keywords::{BOTTOM, TYPE, UNIT};
 use rura_parsing::{
-    binary, braced, closure_parameters, constant, constructor_parameters, elidable, elidable_block,
-    expect, field, fmt_delimited, function_parameters, function_type, identifier, members,
+    binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
+    elidable_block, expect, field, fmt_delimited, function_parameters, function_type, identifier,
     parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
     tuple_type, type_arguments, type_parameters, unary, unique_type, BinOp, Constant, Constructor,
     Name, PrimitiveType, QualifiedName, UnOp,
@@ -80,8 +80,20 @@ impl Declaration<AST> {
 pub enum Definition<T> {
     Undefined,
     Function(Box<T>),
-    Enum(HashMap<Name, Constructor<Name, T>>),
-    Struct(HashMap<Name, T>),
+    Enum(Enum<T>),
+    Struct(Struct<T>),
+}
+
+#[derive(Clone, Debug)]
+pub enum Enum<T> {
+    Unchecked(Box<[Constructor<Name, T>]>),
+    Checked(HashMap<Name, Constructor<Name, T>>),
+}
+
+#[derive(Clone, Debug)]
+pub enum Struct<T> {
+    Unchecked(Box<[(Name, T)]>),
+    Checked(HashMap<Name, T>),
 }
 
 #[derive(Clone, Debug)]
@@ -328,7 +340,7 @@ fn function_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
                 definition,
             },
         )
-        .context(expect("function"))
+        .context(expect("function declaration"))
         .parse_next(i)
 }
 
@@ -351,19 +363,8 @@ fn enum_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
 }
 
 fn enum_definition(i: &mut &str) -> PResult<Definition<AST>> {
-    separated(
-        1..,
-        skip_space(constructor).map(|ctor| (ctor.name.clone(), ctor)),
-        elidable(","),
-    )
-    .map(|ctors: Vec<_>| Definition::Enum(ctors.into_iter().collect()))
-    .parse_next(i)
-}
-
-fn constructor(i: &mut &str) -> PResult<Constructor<Name, AST>> {
-    (identifier, skip_space(members(type_expression)))
-        .map(|(name, params)| Constructor { name, params })
-        .context(expect("constructor"))
+    separated(1.., skip_space(constructor(type_expression)), elidable(","))
+        .map(|ctors: Vec<_>| Definition::Enum(Enum::Unchecked(ctors.into_boxed_slice())))
         .parse_next(i)
 }
 
@@ -381,7 +382,7 @@ fn struct_declaration(i: &mut &str) -> PResult<Declaration<AST>> {
 
 fn struct_definition(i: &mut &str) -> PResult<Definition<AST>> {
     separated(1.., skip_space(field(type_expression)), elidable(","))
-        .map(|f: Vec<_>| Definition::Struct(f.into_iter().collect()))
+        .map(|f: Vec<_>| Definition::Struct(Struct::Unchecked(f.into_boxed_slice())))
         .parse_next(i)
 }
 

@@ -1,12 +1,14 @@
+use std::collections::HashMap;
+
 use winnow::ascii::{alpha1, digit1};
-use winnow::combinator::{alt, opt, preceded, repeat, separated};
+use winnow::combinator::{self, alt, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
 use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::lir::ir::{
     ArithMode, BinaryOp, Block, Bound, ClosureCreation, CtorCall, EliminationStyle, FunctionCall,
-    FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator, InductiveTypeDef, Lir,
+    FunctionDef, FunctionPrototype, IfThenElse, InductiveEliminator, InductiveTypeDef, LExpr, Lir,
     MakeMutReceiver, Module, RefField, TraitExpr, UnaryOp,
 };
 use rura_core::lir::types::{LirType, TypeVar};
@@ -834,9 +836,10 @@ pub fn parse_module(i: &mut Input) -> PResult<Module> {
         qualified_name,
         skip_space("{"),
         items.context(expect("module items")),
+        combinator::opt(skip_space(parse_metadata)),
         skip_space("}"),
     )
-        .map(|(_, name, _, items, _)| {
+        .map(|(_, name, _, items, metadata, _)| {
             let mut functions = Vec::new();
             let mut external_functions = Vec::new();
             let mut inductive_types = Vec::new();
@@ -852,9 +855,35 @@ pub fn parse_module(i: &mut Input) -> PResult<Module> {
                 functions: functions.into_boxed_slice(),
                 external_functions: external_functions.into_boxed_slice(),
                 inductive_types: inductive_types.into_boxed_slice(),
+                metadata: metadata.unwrap_or_default(),
             }
         })
         .context(expect("module"))
+        .parse_next(i)
+}
+
+fn parse_metadata_entry<'a>(i: &mut Input<'a>) -> PResult<(&'a str, LExpr)> {
+    (
+        identifier::<Input>,
+        skip_space("="),
+        winnow::token::take_until(1.., ';'),
+        ';',
+    )
+        .map(|(key, _, value, _)| (*key, lexpr::from_str(value)))
+        .verify_map(|(key, value)| value.ok().map(|value| (key, value)))
+        .parse_next(i)
+}
+
+fn parse_metadata(i: &mut Input) -> PResult<HashMap<String, LExpr>> {
+    let inner = combinator::repeat(0.., skip_space(parse_metadata_entry));
+    ("metadata", ws_or_comment, "{", skip_space(inner), "}")
+        .map(|(_, _, _, entries, _)| {
+            let mut map = HashMap::new();
+            for (key, value) in Vec::into_iter(entries) {
+                map.insert(key.to_string(), value);
+            }
+            map
+        })
         .parse_next(i)
 }
 
@@ -1482,6 +1511,10 @@ module test {
         }
     }
     fn extern_test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>;
+
+    metadata {
+        test = (1 2 3);
+    }
 }
 "#,
         );

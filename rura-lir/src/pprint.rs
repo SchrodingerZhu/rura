@@ -557,6 +557,19 @@ impl Display for PrettyPrint<'_, Module> {
             let padding = "\t".repeat(self.indent + 1);
             writeln!(f, "{padding}{};", self.next_level(external))?;
         }
+        if !self.target.metadata.is_empty() {
+            let padding = "\t".repeat(self.indent + 1);
+            writeln!(f, "{padding}metadata {{",)?;
+            for (key, value) in self.target.metadata.iter() {
+                writeln!(
+                    f,
+                    "{padding}\t{} = {};",
+                    key,
+                    lexpr::to_string(value).unwrap()
+                )?;
+            }
+            writeln!(f, "{padding}}}")?;
+        }
         write!(f, "}}")
     }
 }

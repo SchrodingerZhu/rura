@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::hash::Hash;
 
 use proc_macro2::TokenStream;
@@ -547,13 +548,14 @@ pub struct InductiveTypeDef {
     pub bounds: Box<[Bound]>,
     pub ctors: Box<[CtorDef]>,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub type LExpr = lexpr::Value;
+#[derive(Clone, Debug)]
 pub struct Module {
     pub name: QualifiedName,
     pub functions: Box<[FunctionDef]>,
     pub external_functions: Box<[FunctionPrototype]>,
     pub inductive_types: Box<[InductiveTypeDef]>,
+    pub metadata: HashMap<String, LExpr>,
 }
 
 #[cfg(test)]

@@ -141,6 +141,7 @@ fn parse_constant_instr(i: &mut &str) -> PResult<Lir> {
         parse_typed_u128,
         parse_typed_usize,
         parse_typed_literal,
+        "()".value(Constant::Unit),
     ));
     (
         parse_operand,
@@ -376,6 +377,7 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_fill_instr,
         parse_rc_to_unique_instr,
         parse_unique_to_rc_instr,
+        parse_cast_instr,
         parse_call_instr,
         parse_ctor_call_instr,
         parse_clone_instr,
@@ -579,6 +581,24 @@ fn parse_unique_to_rc_instr(i: &mut &str) -> PResult<Lir> {
         ";",
     )
         .map(|(result, _, _, value, _)| Lir::UniqueToRc { result, value })
+        .parse_next(i)
+}
+
+fn parse_cast_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "cast",
+        skip_space(parse_operand),
+        ":",
+        skip_space(parse_lir_type).map(Box::new),
+        ";",
+    )
+        .map(|(result, _, _, value, _, target, _)| Lir::Cast {
+            result,
+            value,
+            target,
+        })
         .parse_next(i)
 }
 
@@ -1315,6 +1335,18 @@ mod test {
     }
 
     #[test]
+    fn test_parse_consant_unit_instr() {
+        let mut input = "%1 = constant () ;";
+        let result = parse_constant_instr(&mut input).unwrap();
+        assert_eq!(
+            result,
+            Lir::Constant {
+                value: Box::new(Constant::Unit),
+                result: 1
+            }
+        );
+    }
+    #[test]
     fn test_parse_function_prototype() {
         let mut test = r#"fn test<T>(%1: i32, %2: f64) -> i32 where @T: std::TraitFoo + std::TraitBar<Head = ()>"#;
         let result = parse_function_prototype(&mut test).unwrap();
@@ -1391,6 +1423,20 @@ mod test {
                         ])
                     }
                 ])
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_cast_instr() {
+        let mut test = r#"%1 = cast %2 : i32;"#;
+        let result = parse_cast_instr(&mut test).unwrap();
+        assert_eq!(
+            result,
+            Lir::Cast {
+                result: 1,
+                value: 2,
+                target: Box::new(LirType::Primitive(PrimitiveType::I32))
             }
         );
     }

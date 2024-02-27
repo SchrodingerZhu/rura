@@ -84,6 +84,7 @@ pub enum Constant {
     Bool(bool),
     Char(char),
     Literal(String),
+    Unit,
 }
 
 impl Display for Constant {
@@ -106,6 +107,7 @@ impl Display for Constant {
             Constant::Bool(v) => v.fmt(f),
             Constant::Char(c) => write!(f, "'{c}'"),
             Constant::Literal(s) => write!(f, "\"{s}\""),
+            Constant::Unit => write!(f, "()"),
         }
     }
 }
@@ -130,6 +132,7 @@ impl PartialEq for Constant {
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Char(a), Self::Char(b)) => a == b,
             (Self::Literal(a), Self::Literal(b)) => a == b,
+            (Self::Unit, Self::Unit) => true,
             _ => false,
         }
     }
@@ -158,6 +161,7 @@ impl Hash for Constant {
             Self::Bool(a) => a.hash(state),
             Self::Char(a) => a.hash(state),
             Self::Literal(a) => a.hash(state),
+            Self::Unit => 0.hash(state),
         }
     }
 }
@@ -181,6 +185,29 @@ pub enum PrimitiveType {
     Bool,
     Char,
     Str,
+}
+
+impl PrimitiveType {
+    pub fn is_numeric(&self) -> bool {
+        // TODO: consider char?
+        matches!(
+            self,
+            PrimitiveType::I8
+                | PrimitiveType::I16
+                | PrimitiveType::I32
+                | PrimitiveType::I64
+                | PrimitiveType::ISize
+                | PrimitiveType::I128
+                | PrimitiveType::U8
+                | PrimitiveType::U16
+                | PrimitiveType::U32
+                | PrimitiveType::U64
+                | PrimitiveType::USize
+                | PrimitiveType::U128
+                | PrimitiveType::F32
+                | PrimitiveType::F64
+        )
+    }
 }
 
 impl Display for PrimitiveType {

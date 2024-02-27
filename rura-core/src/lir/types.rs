@@ -66,6 +66,12 @@ impl LirType {
             LirType::Unique(_) => false,
         }
     }
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            LirType::Primitive(p) => p.is_numeric(),
+            _ => false,
+        }
+    }
     pub fn is_interface_compat(&self) -> bool {
         if let LirType::Unique(x) = self {
             x.is_object() && x.is_materializable()

@@ -378,6 +378,12 @@ pub enum Lir {
         value: usize,
         result: usize,
     },
+    /// Cast numeric values
+    Cast {
+        value: usize,
+        result: usize,
+        target: Box<LirType>,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {
@@ -437,6 +443,7 @@ impl Lir {
             Lir::Unreachable { .. } => box_iter![],
             Lir::RcToUnique { result, .. } => box_iter![*result],
             Lir::UniqueToRc { result, .. } => box_iter![*result],
+            Lir::Cast { result, .. } => box_iter![*result],
         }
     }
     /// Get the operands used by the instruction. Notice that `Closure` is special that
@@ -462,6 +469,7 @@ impl Lir {
             Lir::Unreachable { .. } => box_iter![],
             Lir::RcToUnique { value, .. } => box_iter![*value],
             Lir::UniqueToRc { value, .. } => box_iter![*value],
+            Lir::Cast { value, .. } => box_iter![*value],
         }
     }
 

@@ -200,6 +200,7 @@ impl Display for PrettyPrint<'_, Constant> {
             Constant::Bool(x) => write!(f, "{} : bool", x),
             Constant::Char(x) => write!(f, "{x:?} : char"),
             Constant::Literal(x) => write!(f, "{x:?} : str"),
+            Constant::Unit => write!(f, "()"),
         }
     }
 }
@@ -525,6 +526,19 @@ impl Display for PrettyPrint<'_, Lir> {
             }
             Lir::UniqueToRc { value, result } => {
                 write!(f, "%{} = unique-to-rc %{};", result, value)
+            }
+            Lir::Cast {
+                value,
+                result,
+                target,
+            } => {
+                write!(
+                    f,
+                    "%{} = cast %{} : {};",
+                    result,
+                    value,
+                    PrettyPrint::new(&**target)
+                )
             }
         }
     }

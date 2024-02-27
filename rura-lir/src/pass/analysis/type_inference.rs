@@ -35,6 +35,8 @@ pub enum Error {
     InvalidOperand(usize, Box<LirType>),
     #[error("return value %{0} : {} does not match function signature", PrettyPrint::new(&**.1))]
     InvalidReturnValue(usize, Box<LirType>),
+    #[error("target type {} is not pemissible in casting", PrettyPrint::new(&**.0))]
+    InvalidCastTarget(Box<LirType>),
 }
 
 pub struct TypeInferenceContext<'a> {
@@ -102,6 +104,13 @@ impl<'a> TypeInferenceContext<'a> {
         self.errors.push((
             self.context.last().unwrap().clone(),
             Error::InvalidReturnValue(operand, Box::new(operand_type)),
+        ));
+    }
+
+    pub fn invalid_cast_target(&mut self, target: LirType) {
+        self.errors.push((
+            self.context.last().unwrap().clone(),
+            Error::InvalidCastTarget(Box::new(target)),
         ));
     }
 
@@ -319,6 +328,10 @@ impl LirVisitor for TypeInference {
                     Constant::Bool(_) => PrimitiveType::Bool,
                     Constant::Char(_) => PrimitiveType::Char,
                     Constant::Literal(_) => PrimitiveType::Str,
+                    Constant::Unit => {
+                        context.set_type(*result, LirType::Unit);
+                        return;
+                    }
                 };
                 context.set_type(*result, LirType::Primitive(ty));
             }
@@ -337,6 +350,21 @@ impl LirVisitor for TypeInference {
             Lir::Unreachable { panic } => {}
             Lir::RcToUnique { value, result } => todo!(),
             Lir::UniqueToRc { value, result } => todo!(),
+            Lir::Cast {
+                value,
+                result,
+                target,
+            } => {
+                if !target.is_numeric() {
+                    context.invalid_cast_target(target.as_ref().clone());
+                }
+                let vt = get_type!(context, *value);
+                if !vt.is_numeric() {
+                    context.invalid_operand(*value, vt.clone());
+                } else {
+                    context.set_type(*result, vt.clone());
+                }
+            }
         }
     }
     // fn visit_if_then_else<'a>(

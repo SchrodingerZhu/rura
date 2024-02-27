@@ -368,6 +368,16 @@ pub enum Lir {
     Unreachable {
         panic: bool,
     },
+    /// Uniquefy a value
+    RcToUnique {
+        value: usize,
+        result: usize,
+    },
+    /// Cast back to Rc
+    UniqueToRc {
+        value: usize,
+        result: usize,
+    },
 }
 
 fn variable(id: usize) -> proc_macro2::Ident {
@@ -425,6 +435,8 @@ impl Lir {
             Lir::Fill { .. } => box_iter![],
             Lir::Curry { result, .. } => box_iter![*result],
             Lir::Unreachable { .. } => box_iter![],
+            Lir::RcToUnique { result, .. } => box_iter![*result],
+            Lir::UniqueToRc { result, .. } => box_iter![*result],
         }
     }
     /// Get the operands used by the instruction. Notice that `Closure` is special that
@@ -448,6 +460,8 @@ impl Lir {
             Lir::Fill { hole, value } => box_iter![*hole, *value],
             Lir::Curry { .. } => box_iter![],
             Lir::Unreachable { .. } => box_iter![],
+            Lir::RcToUnique { value, .. } => box_iter![*value],
+            Lir::UniqueToRc { value, .. } => box_iter![*value],
         }
     }
 

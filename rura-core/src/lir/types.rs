@@ -45,6 +45,8 @@ pub enum LirType {
     Ref(Box<Self>),
     /// Reuse Token
     Token(Box<Self>),
+    /// Unique Rc
+    Unique(Box<Self>),
 }
 
 impl LirType {
@@ -61,6 +63,7 @@ impl LirType {
             LirType::Hole(_) => false,
             LirType::Ref(_) => false,
             LirType::Token(_) => false,
+            LirType::Unique(_) => false,
         }
     }
 }

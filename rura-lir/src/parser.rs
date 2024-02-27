@@ -32,6 +32,12 @@ fn parse_reuse_token_type(i: &mut &str) -> PResult<LirType> {
         .parse_next(i)
 }
 
+fn parse_unique_type(i: &mut &str) -> PResult<LirType> {
+    ("†", parse_lir_type)
+        .map(|(_, x)| LirType::Unique(Box::new(x)))
+        .parse_next(i)
+}
+
 fn parse_object_type_content(i: &mut &str) -> PResult<(QualifiedName, Box<[LirType]>)> {
     (
         qualified_name,
@@ -49,6 +55,7 @@ fn parse_lir_type(i: &mut &str) -> PResult<LirType> {
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
         parse_reuse_token_type,
+        parse_unique_type,
         reference_type(parse_lir_type).map(LirType::Ref),
         function_type(parse_lir_type),
         parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),
@@ -367,6 +374,8 @@ fn parse_lir_instr(i: &mut &str) -> PResult<Lir> {
         parse_if_then_else_instr,
         parse_inductive_elimination_instr,
         parse_fill_instr,
+        parse_rc_to_unique_instr,
+        parse_unique_to_rc_instr,
         parse_call_instr,
         parse_ctor_call_instr,
         parse_clone_instr,
@@ -546,6 +555,30 @@ fn parse_fill_instr(i: &mut &str) -> PResult<Lir> {
         ";",
     )
         .map(|(_, hole, _, value, _)| Lir::Fill { hole, value })
+        .parse_next(i)
+}
+
+fn parse_rc_to_unique_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "rc-to-unique",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(result, _, _, value, _)| Lir::RcToUnique { result, value })
+        .parse_next(i)
+}
+
+fn parse_unique_to_rc_instr(i: &mut &str) -> PResult<Lir> {
+    (
+        parse_operand,
+        skip_space("="),
+        "unique-to-rc",
+        skip_space(parse_operand),
+        ";",
+    )
+        .map(|(result, _, _, value, _)| Lir::UniqueToRc { result, value })
         .parse_next(i)
 }
 

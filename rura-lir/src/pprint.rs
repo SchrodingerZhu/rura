@@ -79,6 +79,7 @@ impl Display for PrettyPrint<'_, LirType> {
             LirType::Hole(ty) => write!(f, "◊{}", PrettyPrint::new(&**ty)),
             LirType::Ref(ty) => write!(f, "&{}", PrettyPrint::new(&**ty)),
             LirType::Token(ty) => write!(f, "↻{}", PrettyPrint::new(&**ty)),
+            LirType::Unique(ty) => write!(f, "†{}", PrettyPrint::new(&**ty)),
         }
     }
 }
@@ -518,6 +519,12 @@ impl Display for PrettyPrint<'_, Lir> {
                 } else {
                     write!(f, "unreachable;")
                 }
+            }
+            Lir::RcToUnique { value, result } => {
+                write!(f, "%{} = rc-to-unique %{};", result, value)
+            }
+            Lir::UniqueToRc { value, result } => {
+                write!(f, "%{} = unique-to-rc %{};", result, value)
             }
         }
     }

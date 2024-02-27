@@ -133,6 +133,7 @@ impl<'a> TypeInferenceContext<'a> {
                 LirType::Hole(inner) => recursively_check_typevar(inner, set),
                 LirType::Ref(inner) => recursively_check_typevar(inner, set),
                 LirType::Token(inner) => recursively_check_typevar(inner, set),
+                LirType::Unique(inner) => recursively_check_typevar(inner, set),
             }
         }
         if !recursively_check_typevar(operand_type, &self.type_variables) {
@@ -313,6 +314,8 @@ impl LirVisitor for TypeInference {
             }
             Lir::Curry { function, result } => todo!(),
             Lir::Unreachable { panic } => {}
+            Lir::RcToUnique { value, result } => todo!(),
+            Lir::UniqueToRc { value, result } => todo!(),
         }
     }
     // fn visit_if_then_else<'a>(

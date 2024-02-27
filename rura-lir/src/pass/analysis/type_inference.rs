@@ -50,6 +50,12 @@ pub struct TypeInferenceContext<'a> {
     should_continue: bool,
 }
 
+impl<'a> Default for TypeInferenceContext<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> TypeInferenceContext<'a> {
     pub fn new() -> Self {
         const UNIT_TYPE: LirType = LirType::Unit;
@@ -378,9 +384,9 @@ impl LirVisitor for TypeInference {
             }
             Lir::UnaryOp(x) => {
                 let ty = get_type!(context, x.operand);
-                if matches!(x.op, rura_core::UnOp::Neg) && !ty.is_numeric() {
-                    context.invalid_operand(x.operand, ty.clone());
-                } else if matches!(x.op, rura_core::UnOp::Not) && !ty.is_boolean() {
+                if (matches!(x.op, rura_core::UnOp::Neg) && !ty.is_numeric())
+                    || (matches!(x.op, rura_core::UnOp::Not) && !ty.is_boolean())
+                {
                     context.invalid_operand(x.operand, ty.clone());
                 } else {
                     context.set_type(x.result, ty.clone());

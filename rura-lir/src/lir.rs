@@ -218,6 +218,34 @@ pub struct BinaryOp {
     /// Identifier of the result
     pub result: usize,
 }
+
+impl BinaryOp {
+    pub fn is_arithmetic(&self) -> bool {
+        matches!(
+            self.op,
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem
+        )
+    }
+
+    pub fn is_bitwise(&self) -> bool {
+        matches!(
+            self.op,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr
+        )
+    }
+
+    pub fn is_logical(&self) -> bool {
+        matches!(self.op, BinOp::And | BinOp::Or)
+    }
+
+    pub fn is_comparison(&self) -> bool {
+        matches!(
+            self.op,
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnaryOp {
     /// The unary operation to perform

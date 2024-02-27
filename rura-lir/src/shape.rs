@@ -234,7 +234,6 @@ mod test {
     use rura_core::lir::ir::CtorDef;
     use rura_core::lir::QualifiedName;
     use rura_core::Member;
-    use rura_core::PrimitiveType;
 
     use crate::pprint::PrettyPrint;
 

@@ -864,7 +864,7 @@ mod test {
     use winnow::Located;
 
     use rura_core::lir::ir::CtorDef;
-    use rura_core::{Constant, PrimitiveType};
+    use rura_core::PrimitiveType;
     use rura_parsing::eol_comment;
 
     use super::*;

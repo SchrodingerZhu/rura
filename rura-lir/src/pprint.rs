@@ -563,7 +563,6 @@ impl Display for PrettyPrint<'_, Module> {
 
 #[cfg(test)]
 mod test {
-    use rura_core::lir::ir::Lir;
     use rura_core::{BinOp, PrimitiveType, UnOp};
     use winnow::Located;
 

@@ -55,9 +55,9 @@ impl Hash for Name {
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleID {
+    crate_name: Name,
     modules: Box<[Name]>,
 }
 
@@ -68,8 +68,14 @@ impl ModuleID {
 }
 
 impl From<Box<[Name]>> for ModuleID {
-    fn from(modules: Box<[Name]>) -> Self {
-        Self { modules }
+    fn from(names: Box<[Name]>) -> Self {
+        let mut it = names.into_vec().into_iter();
+        let crate_name = it.next().unwrap();
+        let modules = it.collect();
+        Self {
+            crate_name,
+            modules,
+        }
     }
 }
 
@@ -179,18 +185,13 @@ impl Declaration<AST> {
 pub enum Definition<T> {
     Undefined,
     Function(Box<T>),
-    Enum(Enum<T>),
-    Struct(Struct<T>),
+    Enum(DefinitionMembers<Constructor<Name, T>>),
+    Struct(DefinitionMembers<T>),
+    ExternalModule(ModuleID),
 }
 
 #[derive(Clone, Debug)]
-pub enum Enum<T> {
-    Unchecked(Box<[Constructor<Name, T>]>),
-    Checked(HashMap<Name, Constructor<Name, T>>),
-}
-
-#[derive(Clone, Debug)]
-pub enum Struct<T> {
+pub enum DefinitionMembers<T> {
     Unchecked(Box<[(Name, T)]>),
     Checked(HashMap<Name, T>),
 }
@@ -453,4 +454,8 @@ impl Display for Matcher {
     }
 }
 
-pub type File = Box<[Declaration<AST>]>;
+pub struct Module {
+    pub id: ModuleID,
+    pub declarations: Box<[Declaration<AST>]>,
+    pub submodules: Box<[Self]>,
+}

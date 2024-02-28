@@ -5,11 +5,11 @@ use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_core::ast::{
-    Declaration, Definition, Enum, Expression, File, Matcher, Name, Parameter, QualifiedName,
-    Struct, AST,
+    Declaration, Definition, DefinitionMembers, Expression, Matcher, Name, Parameter,
+    QualifiedName, AST,
 };
 use rura_core::keywords::{BOTTOM, UNIT};
-use rura_core::{Input, Span};
+use rura_core::{Constructor, Input, Span};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
     elidable_block, expect, field, function_parameters, function_type, identifier, parenthesized,
@@ -17,7 +17,7 @@ use rura_parsing::{
     type_arguments, type_parameters, unary,
 };
 
-pub fn file(i: &mut Input) -> PResult<File> {
+pub fn declarations(i: &mut Input) -> PResult<Box<[Declaration<AST>]>> {
     repeat(
         0..,
         skip_space(alt((
@@ -78,7 +78,14 @@ fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
 
 fn enum_definition(i: &mut Input) -> PResult<Definition<AST>> {
     separated(1.., skip_space(constructor(type_expression)), elidable(","))
-        .map(|ctors: Vec<_>| Definition::Enum(Enum::Unchecked(ctors.into_boxed_slice())))
+        .map(|ctors: Vec<_>| {
+            Definition::Enum(DefinitionMembers::Unchecked(
+                ctors
+                    .into_iter()
+                    .map(|c: Constructor<Name, AST>| (c.name.clone(), c))
+                    .collect(),
+            ))
+        })
         .parse_next(i)
 }
 
@@ -97,7 +104,7 @@ fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
 
 fn struct_definition(i: &mut Input) -> PResult<Definition<AST>> {
     separated(1.., skip_space(field(type_expression)), elidable(","))
-        .map(|f: Vec<_>| Definition::Struct(Struct::Unchecked(f.into_boxed_slice())))
+        .map(|f: Vec<_>| Definition::Struct(DefinitionMembers::Unchecked(f.into_boxed_slice())))
         .parse_next(i)
 }
 

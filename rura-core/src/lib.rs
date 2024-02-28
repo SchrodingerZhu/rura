@@ -3,20 +3,31 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use winnow::error::ContextError;
 use winnow::Located;
 
 pub mod ast;
 pub mod lir;
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("parse error: {0}")]
+    Parsing(ContextError),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
 pub type Span = Range<usize>;
 
 pub type Input<'a> = Located<&'a str>;
 
-pub fn fmt_separated<T, P, I, W: Write>(f: &mut W, args: I, sep: P) -> std::fmt::Result
+pub fn fmt_separated<T, P, I, W>(f: &mut W, args: I, sep: P) -> std::fmt::Result
 where
     T: Display,
     P: Display,
     I: ExactSizeIterator<Item = T>,
+    W: Write,
 {
     let length = args.len();
     for (i, arg) in args.enumerate() {
@@ -28,17 +39,12 @@ where
     Ok(())
 }
 
-pub fn fmt_delimited<T, P, I, W: Write>(
-    f: &mut W,
-    left: P,
-    args: I,
-    sep: P,
-    right: P,
-) -> std::fmt::Result
+pub fn fmt_delimited<T, P, I, W>(f: &mut W, left: P, args: I, sep: P, right: P) -> std::fmt::Result
 where
     T: Display,
     P: Display,
     I: ExactSizeIterator<Item = T>,
+    W: Write,
 {
     write!(f, "{left}")?;
     fmt_separated(f, args, sep)?;

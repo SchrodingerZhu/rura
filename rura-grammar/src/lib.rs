@@ -6,10 +6,10 @@ use winnow::{PResult, Parser};
 
 use rura_core::ast::{
     DatatypeMembers, Declaration, Definition, EnumDefinition, Expression, FunctionDefinition,
-    Matcher, Module, Name, Parameter, QualifiedName, StructDefinition, AST,
+    Matcher, Module, ModuleID, Name, Parameter, QualifiedName, StructDefinition, AST,
 };
 use rura_core::keywords::{BOTTOM, UNIT};
-use rura_core::{Constructor, Input, Span};
+use rura_core::{Constructor, Error, Input, Span};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
     elidable_block, expect, field, function_parameters, function_type, identifier, parenthesized,
@@ -17,7 +17,13 @@ use rura_parsing::{
     type_arguments, type_parameters, unary,
 };
 
-pub fn declarations(i: &mut Input) -> PResult<Box<[Declaration<AST>]>> {
+pub fn module(i: &str, id: ModuleID) -> Result<Module, Error> {
+    let mut input = Input::new(i);
+    let declarations = declarations(&mut input)?;
+    Ok(Module { id, declarations })
+}
+
+fn declarations(i: &mut Input) -> PResult<Box<[Declaration<AST>]>> {
     repeat(
         0..,
         skip_space(alt((

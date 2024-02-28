@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use winnow::error::ContextError;
+use winnow::error::{ContextError, ErrMode};
 use winnow::Located;
 
 pub mod ast;
@@ -12,8 +12,14 @@ pub mod lir;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("parse error: {0}")]
+    #[error("parse error")]
     Parsing(ContextError),
+}
+
+impl From<ErrMode<ContextError>> for Error {
+    fn from(e: ErrMode<ContextError>) -> Self {
+        Self::Parsing(e.into_inner().unwrap())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -90,10 +90,10 @@ impl<'a, K: Hash + Eq + Clone, V> HashMapProxy<'a, K, V> {
         let old_value = self.map.insert(key.clone(), value);
         self.changelog.push(Update { key, old_value });
     }
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: ?Sized + Hash + Eq,
     {
         self.map.get(key)
     }

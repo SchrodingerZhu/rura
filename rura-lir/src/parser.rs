@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use winnow::ascii::{alpha1, digit1};
@@ -855,7 +856,7 @@ pub fn parse_module(i: &mut Input) -> PResult<Module> {
                 functions: functions.into_boxed_slice(),
                 external_functions: external_functions.into_boxed_slice(),
                 inductive_types: inductive_types.into_boxed_slice(),
-                metadata: metadata.unwrap_or_default(),
+                metadata: RefCell::new(metadata.unwrap_or_default()),
             }
         })
         .context(expect("module"))

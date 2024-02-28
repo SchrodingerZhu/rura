@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -556,24 +557,27 @@ pub struct Module {
     pub functions: Box<[FunctionDef]>,
     pub external_functions: Box<[FunctionPrototype]>,
     pub inductive_types: Box<[InductiveTypeDef]>,
-    pub metadata: HashMap<String, LExpr>,
+    pub metadata: RefCell<HashMap<String, LExpr>>,
 }
 
 impl Module {
     pub fn add_metadata<T: AsRef<str>, S: Serialize>(
-        &mut self,
+        &self,
         key: T,
         value: S,
     ) -> serde_lexpr::Result<()> {
         self.metadata
+            .borrow_mut()
             .insert(key.as_ref().to_string(), serde_lexpr::to_value(&value)?);
         Ok(())
     }
+
     pub fn get_metadata<T>(&self, key: &str) -> Option<T>
     where
         T: for<'de> Deserialize<'de>,
     {
         self.metadata
+            .borrow()
             .get(key)
             .and_then(|value| serde_lexpr::from_value(value).ok())
     }

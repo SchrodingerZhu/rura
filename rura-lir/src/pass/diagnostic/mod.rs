@@ -3,10 +3,7 @@ use std::fmt::{Display, Write};
 use rura_core::fmt_separated;
 use rura_core::lir::ir::Module;
 
-use super::{
-    visitor::{LirVisitor, TracingContext, VisitorContext},
-    Pass,
-};
+use super::visitor::{LirVisitor, TracingContext, VisitorContext};
 
 pub mod improper_termination;
 pub mod variable_definition;
@@ -99,10 +96,15 @@ impl<'a> TracingContext<'a> for DiagnosticAgent<'a> {
     }
 }
 
-pub trait DiagnosticPass<'a>: Pass + LirVisitor<Context<'a> = DiagnosticAgent<'a>> {
-    fn run_diagnostic(&mut self, module: &'a Module) -> Box<[Diagnostic<'a>]> {
-        let mut agent = DiagnosticAgent::new();
-        self.visit_module(module, &mut agent);
-        agent.into_messages()
-    }
+pub trait DiagnosticPass<'a> {
+    fn diagnose(&mut self, module: &'a Module) -> Box<[Diagnostic<'a>]>;
+}
+
+pub fn default_diagnose_module<'a, S: LirVisitor<Context<'a> = DiagnosticAgent<'a>> + ?Sized>(
+    this: &mut S,
+    module: &'a Module,
+) -> Box<[Diagnostic<'a>]> {
+    let mut agent = DiagnosticAgent::new();
+    this.visit_module(module, &mut agent);
+    agent.into_messages()
 }

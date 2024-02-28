@@ -1,10 +1,10 @@
 use crate::pass::{
     visitor::{default_visit_block, LirVisitor},
-    Pass,
+    BoxedPass, Pass,
 };
-use rura_core::lir::ir::Block;
+use rura_core::lir::ir::{Block, Module};
 
-use super::DiagnosticPass;
+use super::{default_diagnose_module, DiagnosticPass};
 
 pub struct ImproperTermination;
 
@@ -27,7 +27,15 @@ impl LirVisitor for ImproperTermination {
     }
 }
 
-impl DiagnosticPass<'_> for ImproperTermination {}
+impl<'a> DiagnosticPass<'a> for ImproperTermination {
+    fn diagnose(&mut self, module: &'a rura_core::lir::ir::Module) -> Box<[super::Diagnostic<'a>]> {
+        default_diagnose_module(self, module)
+    }
+}
+
+pub fn get_pass<'a>(_: &'a Module, _: &'_ toml::Table) -> BoxedPass<'a> {
+    BoxedPass::Diagnostic(Box::new(ImproperTermination))
+}
 
 #[cfg(test)]
 mod test {
@@ -52,7 +60,7 @@ mod test {
         );
         let mut pass = super::ImproperTermination;
         let module = parse_module(&mut module).unwrap();
-        let messages = pass.run_diagnostic(&module);
+        let messages = pass.diagnose(&module);
         let mut buffer = String::new();
         fmt_diagnostic_messages(&mut buffer, &messages).unwrap();
         println!("{}", buffer);
@@ -77,7 +85,7 @@ mod test {
         );
         let mut pass = super::ImproperTermination;
         let module = parse_module(&mut module).unwrap();
-        let messages = pass.run_diagnostic(&module);
+        let messages = pass.diagnose(&module);
         let mut buffer = String::new();
         fmt_diagnostic_messages(&mut buffer, &messages).unwrap();
         println!("{}", buffer);

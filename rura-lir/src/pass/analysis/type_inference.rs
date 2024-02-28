@@ -1,15 +1,17 @@
 use rura_core::{Constant, PrimitiveType};
 use std::collections::{HashMap, HashSet};
 
-use rura_core::lir::ir::{BinaryOp, FunctionDef, Lir};
+use rura_core::lir::ir::{BinaryOp, FunctionDef, LExpr, Lir, Module};
 use rura_core::lir::types::{LirType, TypeVar};
 use rura_core::lir::{Ident, QualifiedName};
 
 use crate::pass::visitor::default_visit_function_def;
 use crate::pass::visitor::{LirVisitor, TracingContext, VisitorContext};
+use crate::pass::{BoxedPass, Pass};
 use crate::pprint::PrettyPrint;
 
 use super::free_variable::get_free_variable;
+use super::AnalysisPass;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct TypeInference {
@@ -45,7 +47,7 @@ pub struct TypeInferenceContext<'a> {
     return_type: &'a LirType,
     type_variables: HashSet<&'a Ident>,
     context: Vec<VisitorContext<'a>>,
-    errors: Vec<(VisitorContext<'a>, Error)>,
+    errors: Vec<(Box<[VisitorContext<'a>]>, Error)>,
     current_function: HashMap<usize, LirType>,
     should_continue: bool,
 }
@@ -80,7 +82,7 @@ impl<'a> TypeInferenceContext<'a> {
         rhs_type: LirType,
     ) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InconsistentBinaryOperands(lhs, Box::new(lhs_type), rhs, Box::new(rhs_type)),
         ));
         self.should_continue = false;
@@ -88,7 +90,7 @@ impl<'a> TypeInferenceContext<'a> {
 
     pub fn unknown_operand_type(&mut self, operand: usize) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::UnknownOperandType(operand),
         ));
         self.should_continue = false;
@@ -96,7 +98,7 @@ impl<'a> TypeInferenceContext<'a> {
 
     pub fn invalid_interface_type(&mut self, arg_type: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InvalidInterfaceType(Box::new(arg_type)),
         ));
         // could continue
@@ -104,7 +106,7 @@ impl<'a> TypeInferenceContext<'a> {
 
     pub fn imcompatible_capture(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::IncompatibleCapture(operand, Box::new(operand_type)),
         ));
         // could continue
@@ -112,7 +114,7 @@ impl<'a> TypeInferenceContext<'a> {
 
     pub fn invalid_return_value(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InvalidReturnValue(operand, Box::new(operand_type)),
         ));
         // could continue
@@ -120,7 +122,7 @@ impl<'a> TypeInferenceContext<'a> {
 
     pub fn invalid_cast_target(&mut self, target: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InvalidCastTarget(Box::new(target)),
         ));
         // could continue
@@ -179,7 +181,7 @@ impl<'a> TypeInferenceContext<'a> {
         }
         if !recursively_check_typevar(operand_type, &self.type_variables) {
             self.errors.push((
-                self.context.last().unwrap().clone(),
+                self.context.clone().into(),
                 error_maker(Box::new(operand_type.clone())),
             ));
         }
@@ -197,14 +199,14 @@ impl<'a> TypeInferenceContext<'a> {
 
     fn invalid_function_argument(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InvalidFunctionArgument(operand, Box::new(operand_type)),
         ));
         // could continue
     }
     fn invalid_operand(&mut self, operand: usize, operand_type: LirType) {
         self.errors.push((
-            self.context.last().unwrap().clone(),
+            self.context.clone().into(),
             Error::InvalidOperand(operand, Box::new(operand_type)),
         ));
         self.should_continue = false;
@@ -559,6 +561,35 @@ impl LirVisitor for TypeInference {
     }
 }
 
+impl Pass for TypeInference {
+    fn get_identifier(&self) -> &str {
+        "type_inference"
+    }
+}
+
+impl<'a> AnalysisPass<'a> for TypeInference {
+    fn analyze(
+        &mut self,
+        module: &'a rura_core::lir::ir::Module,
+    ) -> Box<[super::AnalysisError<'a>]> {
+        let mut context = TypeInferenceContext::new();
+        self.visit_module(module, &mut context);
+        let errors = std::mem::take(&mut context.errors);
+        module.add_metadata(self.get_identifier(), &self.types);
+        errors
+            .into_iter()
+            .map(|(ctx, err)| super::AnalysisError {
+                context: ctx,
+                message: Box::new(err),
+            })
+            .collect()
+    }
+}
+
+pub fn get_pass<'a>(_: &'a Module, _: &'_ toml::Table) -> BoxedPass<'a> {
+    BoxedPass::Analysis(Box::<TypeInference>::default())
+}
+
 #[cfg(test)]
 mod test {
     use crate::{parser, pass::visitor::LirVisitor, pprint::PrettyPrint};
@@ -579,7 +610,7 @@ mod test {
                 assert_eq!(context.errors.len(), $err);
                 visitor.types
             };
-            module.add_metadata("operand_type", &types);
+            module.add_metadata("type_inference", &types);
             let pprint = format!("{}", PrettyPrint::new(&module));
             println!("{}", pprint);
 

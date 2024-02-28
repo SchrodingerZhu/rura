@@ -4,15 +4,15 @@ use std::{
 };
 
 use rura_core::lir::ir::{
-    ClosureCreation, EliminationStyle, FunctionDef, IfThenElse, InductiveEliminator, Lir,
+    ClosureCreation, EliminationStyle, FunctionDef, IfThenElse, InductiveEliminator, Lir, Module,
 };
 
 use crate::pass::{
     visitor::{default_visit_block, LirVisitor},
-    Pass,
+    BoxedPass, Pass,
 };
 
-use super::{DiagnosticPass, VisitorContext};
+use super::{default_diagnose_module, DiagnosticPass, VisitorContext};
 
 #[derive(Default)]
 pub struct VariableDefinition {
@@ -226,7 +226,15 @@ impl LirVisitor for VariableDefinition {
     }
 }
 
-impl DiagnosticPass<'_> for VariableDefinition {}
+impl<'a> DiagnosticPass<'a> for VariableDefinition {
+    fn diagnose(&mut self, module: &'a rura_core::lir::ir::Module) -> Box<[super::Diagnostic<'a>]> {
+        default_diagnose_module(self, module)
+    }
+}
+
+pub fn get_pass<'a>(_: &'a Module, _: &'_ toml::Table) -> BoxedPass<'a> {
+    BoxedPass::Diagnostic(Box::new(VariableDefinition::new()))
+}
 
 #[cfg(test)]
 mod test {
@@ -239,7 +247,7 @@ mod test {
             let mut module = Located::new($input);
             let mut pass = super::VariableDefinition::new();
             let module = crate::parser::parse_module(&mut module).unwrap();
-            let messages = pass.run_diagnostic(&module);
+            let messages = pass.diagnose(&module);
             let mut buffer = String::new();
             fmt_diagnostic_messages(&mut buffer, &messages).unwrap();
             println!("{}", buffer);

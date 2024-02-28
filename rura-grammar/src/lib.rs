@@ -1,5 +1,5 @@
 use winnow::ascii::dec_uint;
-use winnow::combinator::{alt, delimited, eof, opt, repeat, separated};
+use winnow::combinator::{alt, eof, opt, repeat};
 use winnow::{PResult, Parser};
 
 use rura_core::ast::{
@@ -10,9 +10,9 @@ use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::{Constructor, Error, Input, Span};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
-    elidable_block, expect, field, function_parameters, function_type, identifier, parenthesized,
-    prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple, tuple_type,
-    type_arguments, type_parameters, unary,
+    elidable_block, elided_block, expect, field, function_parameters, function_type, identifier,
+    parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
+    tuple_type, type_arguments, type_parameters, unary,
 };
 
 pub fn module(i: &str, id: ModuleID) -> Result<Module, Error> {
@@ -70,7 +70,7 @@ fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "enum",
         skip_space(identifier),
-        opt(type_parameters.map(Parameter::type_parameters)),
+        opt(skip_space(type_parameters).map(Parameter::type_parameters)),
         elidable_block(enum_constructors, ";"),
     )
         .with_span()
@@ -87,7 +87,7 @@ fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
 }
 
 fn enum_constructors(i: &mut Input) -> PResult<DatatypeMembers<Constructor<Name, AST>>> {
-    separated(1.., skip_space(constructor(type_expression)), elidable(","))
+    repeat(1.., elided_block(constructor(type_expression), ","))
         .map(|v: Vec<_>| {
             DatatypeMembers::Unchecked(
                 v.into_iter()
@@ -102,7 +102,7 @@ fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "struct",
         skip_space(identifier),
-        opt(type_parameters.map(Parameter::type_parameters)),
+        opt(skip_space(type_parameters).map(Parameter::type_parameters)),
         elidable_block(struct_fields, ";"),
     )
         .with_span()
@@ -119,17 +119,13 @@ fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
 }
 
 fn struct_fields(i: &mut Input) -> PResult<DatatypeMembers<AST>> {
-    separated(1.., skip_space(field(type_expression)), elidable(","))
+    repeat(1.., elided_block(field(type_expression), ","))
         .map(|f: Vec<_>| DatatypeMembers::Unchecked(f.into_boxed_slice()))
         .parse_next(i)
 }
 
 fn nested_submodule_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
-    (
-        "mod",
-        skip_space(qualified_name),
-        skip_space(braced(declarations)),
-    )
+    ("mod", skip_space(qualified_name), braced(declarations))
         .with_span()
         .map(|((_, id, declarations), span)| Declaration {
             span,
@@ -140,19 +136,25 @@ fn nested_submodule_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
 }
 
 fn external_submodule_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
-    delimited(
+    (
         "mod",
-        skip_space(qualified_name).map(Definition::ExternalSubmodule),
-        elidable(";"),
+        elided_block(qualified_name, ";").map(Definition::ExternalSubmodule),
     )
-    .with_span()
-    .map(|(definition, span)| Declaration { span, definition })
-    .context(expect("external submodule declaration"))
-    .parse_next(i)
+        .with_span()
+        .map(|((_, definition), span)| Declaration { span, definition })
+        .context(expect("external submodule declaration"))
+        .parse_next(i)
 }
 
 fn block_statement(i: &mut Input) -> PResult<AST> {
-    alt((let_statement, return_statement))
+    opt(alt((let_statement, return_statement)))
+        .with_span()
+        .map(|(v, span)| {
+            v.unwrap_or(AST {
+                span,
+                expr: Box::new(Expression::Unit),
+            })
+        })
         .context(expect("block statement"))
         .parse_next(i)
 }
@@ -190,7 +192,7 @@ fn return_statement(i: &mut Input) -> PResult<AST> {
 fn value_expression(i: &mut Input) -> PResult<AST> {
     alt((
         unary(value_expression),
-        binary(value_expression),
+        binary(primary_value_expression, value_expression),
         closure,
         indexing,
         call,

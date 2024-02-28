@@ -1453,7 +1453,7 @@ mod test {
                         params: Box::new([])
                     },
                     CtorDef {
-                        span: 54..73,
+                        span: 54..72,
                         name: "Cons".into(),
                         params: Box::new([
                             (

@@ -57,6 +57,13 @@ where
     delimited(ws_or_comment, f, ws_or_comment)
 }
 
+pub fn skip_lws<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
+where
+    F: Parser<Input<'a>, O, ContextError>,
+{
+    delimited(ws_or_comment, f, lws_or_multiline_comment)
+}
+
 pub fn elidable<'a, O, F>(end: F) -> impl Parser<Input<'a>, (), ContextError>
 where
     F: Parser<Input<'a>, O, ContextError>,
@@ -69,14 +76,22 @@ where
 }
 
 pub fn elidable_block<'a, O, O2, F, G>(
-    val: F,
+    f: F,
     terminator: G,
 ) -> impl Parser<Input<'a>, O, ContextError>
 where
     F: Copy + Parser<Input<'a>, O, ContextError>,
     G: Parser<Input<'a>, O2, ContextError>,
 {
-    skip_space(alt((braced(val), suffixed(val, elidable(terminator)))))
+    alt((braced(f), elided_block(f, terminator)))
+}
+
+pub fn elided_block<'a, O, O2, F, G>(f: F, terminator: G) -> impl Parser<Input<'a>, O, ContextError>
+where
+    F: Parser<Input<'a>, O, ContextError>,
+    G: Parser<Input<'a>, O2, ContextError>,
+{
+    (skip_lws(f), elidable(terminator)).map(|p| p.0)
 }
 
 pub fn parenthesized<'a, O, F>(f: F) -> impl Parser<Input<'a>, O, ContextError>
@@ -120,16 +135,17 @@ where
     F: Parser<Input<'a>, O, ContextError>,
     S: Parser<Input<'a>, O2, ContextError>,
 {
-    (f, skip_space(suffix)).map(|p| p.0)
+    (skip_space(f), suffix).map(|p| p.0)
 }
 
-pub fn infixed<'a, O, O2, F, II>(
-    lhs: F,
+pub fn infixed<'a, O, O2, L, R, II>(
+    lhs: L,
     infix: II,
-    rhs: F,
+    rhs: R,
 ) -> impl Parser<Input<'a>, (O, O), ContextError>
 where
-    F: Parser<Input<'a>, O, ContextError>,
+    L: Parser<Input<'a>, O, ContextError>,
+    R: Parser<Input<'a>, O, ContextError>,
     II: Parser<Input<'a>, O2, ContextError>,
 {
     (lhs, skip_space(infix), rhs).map(|(l, _, r)| (l, r))
@@ -341,43 +357,46 @@ where
     ))
 }
 
-pub fn infix_op<'a, O, O2, O3, II, F>(
+pub fn infix_op<'a, O, O2, O3, II, L, R>(
+    lhs: L,
     infix: II,
     op: BinOp,
-    val: F,
+    rhs: R,
 ) -> impl Parser<Input<'a>, O3, ContextError>
 where
     O3: From<(O, BinOp, O, Span)>,
-    F: Copy + Parser<Input<'a>, O, ContextError>,
-    II: Copy + Parser<Input<'a>, O2, ContextError>,
+    L: Copy + Parser<Input<'a>, O, ContextError>,
+    R: Copy + Parser<Input<'a>, O, ContextError>,
+    II: Parser<Input<'a>, O2, ContextError>,
 {
-    infixed(val, infix, val)
+    infixed(lhs, infix, rhs)
         .with_span()
         .map(move |((lhs, rhs), span)| From::from((lhs, op, rhs, span)))
         .context(expect("infix operation"))
 }
 
-pub fn binary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
+pub fn binary<'a, O, O2, L, R>(lhs: L, rhs: R) -> impl Parser<Input<'a>, O2, ContextError>
 where
     O2: From<(O, BinOp, O, Span)>,
-    F: Copy + Parser<Input<'a>, O, ContextError>,
+    L: Copy + Parser<Input<'a>, O, ContextError>,
+    R: Copy + Parser<Input<'a>, O, ContextError>,
 {
     alt((
-        infix_op(">>", BinOp::Shr, val),
-        infix_op("<<", BinOp::Shl, val),
-        infix_op("*", BinOp::Mul, val),
-        infix_op("/", BinOp::Div, val),
-        infix_op("+", BinOp::Add, val),
-        infix_op("-", BinOp::Sub, val),
-        infix_op("%", BinOp::Rem, val),
-        infix_op("==", BinOp::Eq, val),
-        infix_op("!=", BinOp::Ne, val),
-        infix_op("<", BinOp::Lt, val),
-        infix_op("<=", BinOp::Le, val),
-        infix_op(">", BinOp::Gt, val),
-        infix_op(">=", BinOp::Ge, val),
-        infix_op("&&", BinOp::And, val),
-        infix_op("||", BinOp::Or, val),
+        infix_op(lhs, ">>", BinOp::Shr, rhs),
+        infix_op(lhs, "<<", BinOp::Shl, rhs),
+        infix_op(lhs, "*", BinOp::Mul, rhs),
+        infix_op(lhs, "/", BinOp::Div, rhs),
+        infix_op(lhs, "+", BinOp::Add, rhs),
+        infix_op(lhs, "-", BinOp::Sub, rhs),
+        infix_op(lhs, "%", BinOp::Rem, rhs),
+        infix_op(lhs, "==", BinOp::Eq, rhs),
+        infix_op(lhs, "!=", BinOp::Ne, rhs),
+        infix_op(lhs, "<", BinOp::Lt, rhs),
+        infix_op(lhs, "<=", BinOp::Le, rhs),
+        infix_op(lhs, ">", BinOp::Gt, rhs),
+        infix_op(lhs, ">=", BinOp::Ge, rhs),
+        infix_op(lhs, "&&", BinOp::And, rhs),
+        infix_op(lhs, "||", BinOp::Or, rhs),
     ))
 }
 
@@ -432,7 +451,7 @@ where
     F: Copy + Parser<Input<'a>, O, ContextError>,
     ID: From<Input<'a>>,
 {
-    (identifier, skip_space(members(typ)))
+    (skip_space(identifier), members(typ))
         .with_span()
         .map(|((name, params), span)| Constructor { span, name, params })
         .context(expect("constructor"))

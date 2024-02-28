@@ -310,6 +310,7 @@ pub enum Expression {
     BottomType,
 
     UnitType,
+    Unit,
 
     PrimitiveType(PrimitiveType),
     Constant(Constant),
@@ -381,7 +382,7 @@ impl Display for Expression {
         f.write_str(match self {
             Self::Type => TYPE,
             Self::BottomType => BOTTOM,
-            Self::UnitType => UNIT,
+            Self::UnitType | Self::Unit => UNIT,
             Self::PrimitiveType(t) => return t.fmt(f),
             Self::Constant(v) => return v.fmt(f),
             Self::TupleType(xs) | Self::Tuple(xs) => {

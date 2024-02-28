@@ -12,7 +12,7 @@ pub mod lir;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("parse error")]
+    #[error("parse error: {0}")]
     Parsing(ContextError),
 }
 

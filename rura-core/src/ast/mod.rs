@@ -4,9 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use crate::keywords::{BOTTOM, TYPE, UNIT};
-use crate::{
-    fmt_delimited, fmt_separated, BinOp, Constant, Constructor, Input, PrimitiveType, Span, UnOp,
-};
+use crate::{fmt_delimited, BinOp, Constant, Constructor, Input, PrimitiveType, Span, UnOp};
 
 /// Name of symbols (e.g. global definitions, local variables), with its raw text and an associated
 /// globally unique ID. The ID is just the address of the internal RC-tracked string.
@@ -62,6 +60,13 @@ pub struct ModuleID {
 }
 
 impl ModuleID {
+    pub fn crate_name<S: Into<String>>(name: S) -> Self {
+        Self {
+            crate_name: Name::new(name),
+            modules: Default::default(),
+        }
+    }
+
     pub fn is_none(&self) -> bool {
         self.modules.is_empty()
     }
@@ -81,7 +86,11 @@ impl From<Box<[Name]>> for ModuleID {
 
 impl Display for ModuleID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        fmt_separated(f, self.modules.iter(), "::")
+        write!(f, "{}", self.crate_name)?;
+        for m in self.modules.iter() {
+            write!(f, "::{m}")?;
+        }
+        Ok(())
     }
 }
 

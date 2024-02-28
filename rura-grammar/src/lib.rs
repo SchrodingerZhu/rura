@@ -1,7 +1,5 @@
-#![allow(unused_variables, dead_code, private_interfaces)] // FIXME
-
 use winnow::ascii::dec_uint;
-use winnow::combinator::{alt, delimited, opt, repeat, separated};
+use winnow::combinator::{alt, delimited, eof, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_core::ast::{
@@ -20,6 +18,7 @@ use rura_parsing::{
 pub fn module(i: &str, id: ModuleID) -> Result<Module, Error> {
     let mut input = Input::new(i);
     let declarations = declarations(&mut input)?;
+    eof(&mut input)?;
     Ok(Module { id, declarations })
 }
 

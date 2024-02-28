@@ -24,7 +24,7 @@ impl Name {
         Rc::as_ptr(&self.0) as _
     }
 
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 }

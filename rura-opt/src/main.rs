@@ -81,7 +81,7 @@ pub struct Opt {
     #[clap(short, long)]
     pub output: Option<PathBuf>,
     #[clap(subcommand)]
-    pub sub_opt: SubOpt,
+    pub sub_opt: Option<SubOpt>,
 }
 
 fn run_pass<'a>(pass: &mut BoxedPass<'a>, module: &'a rura_core::lir::ir::Module) {
@@ -145,7 +145,7 @@ fn run_list() {
 fn main() {
     let opt = Opt::parse();
 
-    if matches!(opt.sub_opt, SubOpt::List) {
+    if matches!(opt.sub_opt, Some(SubOpt::List)) {
         run_list();
         return;
     }
@@ -162,9 +162,10 @@ fn main() {
     let module = rura_lir::parser::parse_module(&mut input).unwrap();
 
     match opt.sub_opt {
-        SubOpt::Scheduled { schedule } => run_schedule(schedule, &module),
-        SubOpt::Single { name, config } => run_single(name, config, &module),
-        SubOpt::List => unreachable!(),
+        None => run_schedule::<&PathBuf>(None, &module),
+        Some(SubOpt::Scheduled { schedule }) => run_schedule(schedule, &module),
+        Some(SubOpt::Single { name, config }) => run_single(name, config, &module),
+        Some(SubOpt::List) => unreachable!(),
     }
 
     match opt.output {

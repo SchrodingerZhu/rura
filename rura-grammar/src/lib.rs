@@ -1,12 +1,12 @@
 #![allow(unused_variables, dead_code, private_interfaces)] // FIXME
 
 use winnow::ascii::dec_uint;
-use winnow::combinator::{alt, opt, repeat, separated};
+use winnow::combinator::{alt, delimited, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_core::ast::{
     DatatypeMembers, Declaration, Definition, EnumDefinition, Expression, FunctionDefinition,
-    Matcher, Name, Parameter, QualifiedName, StructDefinition, AST,
+    Matcher, Module, Name, Parameter, QualifiedName, StructDefinition, AST,
 };
 use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::{Constructor, Input, Span};
@@ -24,6 +24,8 @@ pub fn declarations(i: &mut Input) -> PResult<Box<[Declaration<AST>]>> {
             function_declaration,
             enum_declaration,
             struct_declaration,
+            nested_submodule_declaration,
+            external_submodule_declaration,
         ))),
     )
     .map(|f: Vec<_>| f.into_boxed_slice())
@@ -115,6 +117,33 @@ fn struct_fields(i: &mut Input) -> PResult<DatatypeMembers<AST>> {
     separated(1.., skip_space(field(type_expression)), elidable(","))
         .map(|f: Vec<_>| DatatypeMembers::Unchecked(f.into_boxed_slice()))
         .parse_next(i)
+}
+
+fn nested_submodule_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
+    (
+        "mod",
+        skip_space(qualified_name),
+        skip_space(braced(declarations)),
+    )
+        .with_span()
+        .map(|((_, id, declarations), span)| Declaration {
+            span,
+            definition: Definition::NestedSubmodule(Module { id, declarations }),
+        })
+        .context(expect("nested submodule declaration"))
+        .parse_next(i)
+}
+
+fn external_submodule_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
+    delimited(
+        "mod",
+        skip_space(qualified_name).map(Definition::ExternalSubmodule),
+        elidable(";"),
+    )
+    .with_span()
+    .map(|(definition, span)| Declaration { span, definition })
+    .context(expect("external submodule declaration"))
+    .parse_next(i)
 }
 
 fn block_statement(i: &mut Input) -> PResult<AST> {

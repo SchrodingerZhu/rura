@@ -151,6 +151,12 @@ impl Parameter<AST> {
 pub type Parameters<T> = Box<[Parameter<T>]>;
 
 #[derive(Clone, Debug)]
+pub struct Module {
+    pub id: ModuleID,
+    pub declarations: Box<[Declaration<AST>]>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Declaration<T> {
     pub span: Span,
     pub definition: Definition<T>,
@@ -162,8 +168,8 @@ pub enum Definition<T> {
     Function(FunctionDefinition<T>),
     Enum(EnumDefinition<T>),
     Struct(StructDefinition<T>),
-    ExternalModule(ModuleID),
-    Submodule(Box<[Declaration<T>]>),
+    NestedSubmodule(Module),
+    ExternalSubmodule(ModuleID),
 }
 
 #[derive(Clone, Debug)]
@@ -459,10 +465,4 @@ impl Display for Matcher {
         }
         write!(f, " => {{ {} }}", self.body)
     }
-}
-
-pub struct Module {
-    pub id: ModuleID,
-    pub declarations: Box<[Declaration<AST>]>,
-    pub submodules: Box<[Self]>,
 }

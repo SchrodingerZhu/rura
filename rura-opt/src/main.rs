@@ -18,6 +18,25 @@ static PASSES: phf::Map<&'static str, PassEntry> = phf_map! {
     "variable_definition" => rura_lir::pass::diagnostic::variable_definition::get_pass,
 };
 
+fn default_schedule() -> PassSchedule {
+    PassSchedule {
+        passes: vec![
+            PassConfig {
+                name: "improper_termination".to_string(),
+                config: toml::Table::new(),
+            },
+            PassConfig {
+                name: "variable_definition".to_string(),
+                config: toml::Table::new(),
+            },
+            PassConfig {
+                name: "type_inference".to_string(),
+                config: toml::Table::new(),
+            },
+        ],
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct PassConfig {
     pub name: String,
@@ -39,14 +58,19 @@ pub struct Opt {
     pub output: PathBuf,
     /// Path to the pass schedule file
     #[clap(short, long)]
-    pub schedule: PathBuf,
+    pub schedule: Option<PathBuf>,
 }
 
 // TODO: handle errors more gracefully
 fn main() {
     let opt = Opt::parse();
-    let schedule = std::fs::read_to_string(&opt.schedule).unwrap();
-    let schedule: PassSchedule = toml::from_str(&schedule).unwrap();
+    let schedule = match opt.schedule {
+        Some(schedule) => {
+            let schedule = std::fs::read_to_string(schedule).unwrap();
+            toml::from_str(&schedule).unwrap()
+        }
+        None => default_schedule(),
+    };
 
     let module = std::fs::read_to_string(&opt.input).unwrap();
     let mut input = Located::new(module.as_str());

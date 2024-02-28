@@ -58,12 +58,13 @@ fn main() {
         passes.push(entry(&module, &pass.config));
     }
 
-    let mut err_buffer = String::new();
     for pass in passes.iter_mut() {
+        let mut err_buffer = String::new();
         match pass {
             rura_lir::pass::BoxedPass::Analysis(pass) => {
                 let errors = pass.analyze(&module);
                 fmt_analysis_errors(&mut err_buffer, &errors).unwrap();
+                eprint!("{}", err_buffer);
                 if !errors.is_empty() {
                     std::process::exit(1);
                 }
@@ -71,6 +72,7 @@ fn main() {
             rura_lir::pass::BoxedPass::Diagnostic(pass) => {
                 let diagnostics = pass.diagnose(&module);
                 fmt_diagnostic_messages(&mut err_buffer, &diagnostics).unwrap();
+                eprint!("{}", err_buffer);
                 if diagnostics
                     .iter()
                     .any(|x| matches!(x.level, DiagnosticLevel::Error))

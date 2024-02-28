@@ -96,9 +96,9 @@ impl From<Box<[Self]>> for LirType {
     }
 }
 
-impl From<(Box<[Self]>, Box<Self>)> for LirType {
-    fn from(f: (Box<[Self]>, Box<Self>)) -> Self {
+impl From<(Box<[Self]>, Self)> for LirType {
+    fn from(f: (Box<[Self]>, Self)) -> Self {
         let (params, ret) = f;
-        Self::Closure(params, ret)
+        Self::Closure(params, Box::new(ret))
     }
 }

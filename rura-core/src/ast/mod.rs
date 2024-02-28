@@ -112,32 +112,32 @@ impl Display for QualifiedName {
 #[derive(Clone, Debug)]
 pub struct Parameter<T> {
     pub name: Name,
-    pub typ: Box<T>,
+    pub typ: T,
 }
 
 impl<T> From<(Name, T)> for Parameter<T> {
     fn from(p: (Name, T)) -> Self {
         let (name, typ) = p;
-        Self {
-            name,
-            typ: Box::new(typ),
-        }
+        Self { name, typ }
     }
 }
 
 impl Parameter<AST> {
-    pub fn type_parameter(name: Name) -> Self {
+    pub fn type_parameter(name: Name, span: Span) -> Self {
         Self {
             name,
-            typ: Box::new(AST::Type),
+            typ: AST {
+                span,
+                expr: Box::from(Expression::Type),
+            },
         }
     }
 
-    pub fn type_parameters(names: Box<[Name]>) -> Box<[Self]> {
+    pub fn type_parameters(names: Box<[(Name, Span)]>) -> Box<[Self]> {
         names
             .into_vec()
             .into_iter()
-            .map(Self::type_parameter)
+            .map(|(name, span)| Self::type_parameter(name, span))
             .collect()
     }
 }
@@ -150,7 +150,7 @@ pub struct Declaration<T> {
     pub name: Name,
     pub type_parameters: Option<Parameters<T>>,
     pub parameters: Parameters<T>,
-    pub return_type: Box<T>,
+    pub return_type: T,
     pub definition: Definition<T>,
 }
 
@@ -158,15 +158,18 @@ impl Declaration<AST> {
     pub fn type_declaration(
         span: Span,
         name: Name,
-        types: Option<Box<[Name]>>,
+        types: Option<Box<[(Name, Span)]>>,
         definition: Definition<AST>,
     ) -> Self {
         Self {
-            span,
+            span: span.clone(),
             name,
             type_parameters: types.map(Parameter::type_parameters),
             parameters: Default::default(),
-            return_type: Box::new(AST::Type),
+            return_type: AST {
+                span,
+                expr: Box::from(Expression::Type),
+            },
             definition,
         }
     }
@@ -193,7 +196,92 @@ pub enum Struct<T> {
 }
 
 #[derive(Clone, Debug)]
-pub enum AST {
+pub struct AST {
+    pub span: Span,
+    pub expr: Box<Expression>,
+}
+
+impl Display for AST {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.expr.fmt(f)
+    }
+}
+
+impl From<(Constant, Span)> for AST {
+    fn from(v: (Constant, Span)) -> Self {
+        let (c, span) = v;
+        Self {
+            span,
+            expr: Box::new(Expression::Constant(c)),
+        }
+    }
+}
+
+impl From<(QualifiedName, Span)> for AST {
+    fn from(v: (QualifiedName, Span)) -> Self {
+        let (q, span) = v;
+        Self {
+            span,
+            expr: Box::new(Expression::Variable(q)),
+        }
+    }
+}
+
+impl From<(Box<[Self]>, Span)> for AST {
+    fn from(p: (Box<[Self]>, Span)) -> Self {
+        let (types, span) = p;
+        Self {
+            span,
+            expr: Box::new(Expression::TupleType(types)),
+        }
+    }
+}
+
+impl From<((Box<[Self]>, Self), Span)> for AST {
+    fn from(p: ((Box<[Self]>, Self), Span)) -> Self {
+        let ((parameters, return_type), span) = p;
+        Self {
+            span,
+            expr: Box::new(Expression::FunctionType {
+                parameters,
+                return_type,
+            }),
+        }
+    }
+}
+
+impl From<(UnOp, Self, Span)> for AST {
+    fn from(v: (UnOp, Self, Span)) -> Self {
+        let (op, argument, span) = v;
+        Self {
+            span,
+            expr: Box::new(Expression::UnaryOp { op, argument }),
+        }
+    }
+}
+
+impl From<(Self, BinOp, Self, Span)> for AST {
+    fn from(v: (Self, BinOp, Self, Span)) -> Self {
+        let (lhs, op, rhs, span) = v;
+        Self {
+            span,
+            expr: Box::new(Expression::BinaryOp { lhs, op, rhs }),
+        }
+    }
+}
+
+impl From<((Self, Box<[Matcher]>), Span)> for AST {
+    fn from(m: ((Self, Box<[Matcher]>), Span)) -> Self {
+        let ((argument, matchers), span) = m;
+        Self {
+            span,
+            expr: Box::new(Expression::Matching { argument, matchers }),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Expression {
     Type,
 
     BottomType,
@@ -203,106 +291,69 @@ pub enum AST {
     PrimitiveType(PrimitiveType),
     Constant(Constant),
 
-    TupleType(Box<[Self]>),
-    Tuple(Box<[Self]>),
+    TupleType(Box<[AST]>),
+    Tuple(Box<[AST]>),
     Indexing {
-        tuple: Box<Self>,
+        tuple: AST,
         index: usize,
     },
 
     FunctionType {
-        parameters: Box<[Self]>,
-        return_type: Box<Self>,
+        parameters: Box<[AST]>,
+        return_type: AST,
     },
     Closure {
         parameters: Box<[Name]>,
-        body: Box<Self>,
+        body: AST,
     },
     TypeCall {
-        type_callee: Box<Self>,
-        type_arguments: Box<[Self]>,
+        type_callee: AST,
+        type_arguments: Box<[AST]>,
     },
     Let {
         name: Name,
-        typ: Option<Box<Self>>,
-        value: Box<Self>,
-        body: Box<Self>,
+        typ: Option<AST>,
+        value: AST,
+        body: AST,
     },
     Call {
-        callee: Box<Self>,
-        type_arguments: Option<Box<[Self]>>,
-        arguments: Box<[Self]>,
+        callee: AST,
+        type_arguments: Option<Box<[AST]>>,
+        arguments: Box<[AST]>,
     },
     UnaryOp {
         op: UnOp,
-        argument: Box<Self>,
+        argument: AST,
     },
     BinaryOp {
-        lhs: Box<Self>,
+        lhs: AST,
         op: BinOp,
-        rhs: Box<Self>,
+        rhs: AST,
     },
     IfThenElse {
-        condition: Box<Self>,
-        then_branch: Box<Self>,
-        else_branch: Box<Self>,
+        condition: AST,
+        then_branch: AST,
+        else_branch: AST,
     },
     Matching {
-        argument: Box<Self>,
+        argument: AST,
         matchers: Box<[Matcher]>,
     },
     Access {
-        argument: Box<Self>,
+        argument: AST,
         name: Name,
     },
 
     /// Reference type (refcount-free), statically tracked by the borrow checker.
-    ReferenceType(Box<Self>),
+    ReferenceType(AST),
 
     /// Unique RC type.
-    UniqueType(Box<Self>),
+    UniqueType(AST),
 
     Variable(QualifiedName),
 }
 
-impl From<Box<[Self]>> for AST {
-    fn from(types: Box<[Self]>) -> Self {
-        Self::TupleType(types)
-    }
-}
-
-impl From<(Box<[Self]>, Box<Self>)> for AST {
-    fn from(f: (Box<[Self]>, Box<Self>)) -> Self {
-        let (parameters, return_type) = f;
-        Self::FunctionType {
-            parameters,
-            return_type,
-        }
-    }
-}
-
-impl From<(UnOp, Box<Self>)> for AST {
-    fn from(v: (UnOp, Box<Self>)) -> Self {
-        let (op, argument) = v;
-        Self::UnaryOp { op, argument }
-    }
-}
-
-impl From<(Box<Self>, BinOp, Box<Self>)> for AST {
-    fn from(v: (Box<Self>, BinOp, Box<Self>)) -> Self {
-        let (lhs, op, rhs) = v;
-        Self::BinaryOp { lhs, op, rhs }
-    }
-}
-
-impl From<(Box<AST>, Box<[Matcher]>)> for AST {
-    fn from(m: (Box<AST>, Box<[Matcher]>)) -> Self {
-        let (argument, matchers) = m;
-        Self::Matching { argument, matchers }
-    }
-}
-
-impl Display for AST {
+impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Type => TYPE,

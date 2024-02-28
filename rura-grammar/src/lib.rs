@@ -1,17 +1,20 @@
 #![allow(unused_variables, dead_code, private_interfaces)] // FIXME
 
-use rura_core::ast::{Declaration, Definition, Enum, File, Matcher, Name, Parameter, Struct, AST};
 use winnow::ascii::dec_uint;
 use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
+use rura_core::ast::{
+    Declaration, Definition, Enum, Expression, File, Matcher, Name, Parameter, QualifiedName,
+    Struct, AST,
+};
 use rura_core::keywords::{BOTTOM, UNIT};
-use rura_core::Input;
+use rura_core::{Input, Span};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
-    elidable_block, expect, field, function_parameters, function_type, identifier, identifier_span,
-    parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
-    tuple_type, type_arguments, type_parameters, unary, unique_type,
+    elidable_block, expect, field, function_parameters, function_type, identifier, parenthesized,
+    prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple, tuple_type,
+    type_arguments, type_parameters, unary,
 };
 
 pub fn file(i: &mut Input) -> PResult<File> {
@@ -30,20 +33,23 @@ pub fn file(i: &mut Input) -> PResult<File> {
 fn function_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "fn",
-        skip_space(identifier_span),
+        skip_space(identifier),
         opt(type_parameters).map(|ps| ps.map(Parameter::type_parameters)),
         skip_space(function_parameters(type_expression)),
-        opt(prefixed("->", skip_space(type_expression)))
-            .map(|t| Box::new(t.unwrap_or(AST::UnitType))),
+        opt(prefixed("->", skip_space(type_expression))),
         elidable_block(function_definition, ";"),
     )
+        .with_span()
         .map(
-            |(_, (name, span), type_parameters, parameters, return_type, definition)| Declaration {
-                span,
+            |((_, name, type_parameters, parameters, ret, definition), span)| Declaration {
+                span: span.clone(),
                 name,
                 type_parameters,
                 parameters,
-                return_type,
+                return_type: ret.unwrap_or(AST {
+                    span,
+                    expr: Box::new(Expression::Type),
+                }),
                 definition,
             },
         )
@@ -60,11 +66,12 @@ fn function_definition(i: &mut Input) -> PResult<Definition<AST>> {
 fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "enum",
-        skip_space(identifier_span),
+        skip_space(identifier),
         opt(type_parameters),
         elidable_block(enum_definition, ";"),
     )
-        .map(|(_, (name, span), types, def)| Declaration::type_declaration(span, name, types, def))
+        .with_span()
+        .map(|((_, name, types, def), span)| Declaration::type_declaration(span, name, types, def))
         .context(expect("enum declaration"))
         .parse_next(i)
 }
@@ -78,11 +85,12 @@ fn enum_definition(i: &mut Input) -> PResult<Definition<AST>> {
 fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "struct",
-        skip_space(identifier_span),
+        skip_space(identifier),
         opt(type_parameters),
         elidable_block(struct_definition, ";"),
     )
-        .map(|(_, (name, span), types, def)| Declaration::type_declaration(span, name, types, def))
+        .with_span()
+        .map(|((_, name, types, def), span)| Declaration::type_declaration(span, name, types, def))
         .context(expect("struct declaration"))
         .parse_next(i)
 }
@@ -103,17 +111,21 @@ fn let_statement(i: &mut Input) -> PResult<AST> {
     (
         "let",
         skip_space(identifier),
-        opt(prefixed(":", skip_space(type_expression))).map(|t| t.map(Box::new)),
+        opt(prefixed(":", skip_space(type_expression))),
         "=",
-        value_expression.map(Box::new),
+        value_expression,
         elidable(";"),
-        block_statement.map(Box::new),
+        block_statement,
     )
-        .map(|(_, name, typ, _, value, _, body)| AST::Let {
-            name,
-            typ,
-            value,
-            body,
+        .with_span()
+        .map(|((_, name, typ, _, value, _, body), span)| AST {
+            span,
+            expr: Box::new(Expression::Let {
+                name,
+                typ,
+                value,
+                body,
+            }),
         })
         .context(expect("let statement"))
         .parse_next(i)
@@ -144,20 +156,24 @@ fn value_expression(i: &mut Input) -> PResult<AST> {
 fn closure(i: &mut Input) -> PResult<AST> {
     (
         closure_parameters,
-        alt((braced(block_statement), value_expression)).map(Box::new),
+        alt((braced(block_statement), value_expression)),
     )
-        .map(|(parameters, body)| AST::Closure { parameters, body })
+        .with_span()
+        .map(|((parameters, body), span)| AST {
+            span,
+            expr: Box::new(Expression::Closure { parameters, body }),
+        })
         .context(expect("closure expression"))
         .parse_next(i)
 }
 
 fn indexing(i: &mut Input) -> PResult<AST> {
-    (
-        alt((call, primary_value_expression)).map(Box::new),
-        ".",
-        dec_uint,
-    )
-        .map(|(tuple, _, index)| AST::Indexing { tuple, index })
+    (alt((call, primary_value_expression)), ".", dec_uint)
+        .with_span()
+        .map(|((tuple, _, index), span)| AST {
+            span,
+            expr: Box::new(Expression::Indexing { tuple, index }),
+        })
         .context(expect("tuple indexing expression"))
         .parse_next(i)
 }
@@ -173,12 +189,16 @@ fn call(i: &mut Input) -> PResult<AST> {
             )),
         ),
     )
-        .map(|(f, args): (AST, Vec<_>)| {
+        .with_span()
+        .map(|((f, args), span): ((AST, Vec<_>), Span)| {
             args.into_iter()
-                .fold(f, |f, (type_arguments, arguments)| AST::Call {
-                    callee: Box::new(f),
-                    type_arguments,
-                    arguments,
+                .fold(f, |f, (type_arguments, arguments)| AST {
+                    span: span.clone(),
+                    expr: Box::new(Expression::Call {
+                        callee: f,
+                        type_arguments,
+                        arguments,
+                    }),
                 })
         })
         .context(expect("function call"))
@@ -188,18 +208,20 @@ fn call(i: &mut Input) -> PResult<AST> {
 fn if_then_else(i: &mut Input) -> PResult<AST> {
     (
         "if",
-        skip_space(value_expression).map(Box::new),
-        skip_space(block_statement).map(Box::new),
+        skip_space(value_expression),
+        skip_space(block_statement),
         "else",
-        skip_space(block_statement).map(Box::new),
+        skip_space(block_statement),
     )
-        .map(
-            |(_, condition, then_branch, _, else_branch)| AST::IfThenElse {
+        .with_span()
+        .map(|((_, condition, then_branch, _, else_branch), span)| AST {
+            span,
+            expr: Box::new(Expression::IfThenElse {
                 condition,
                 then_branch,
                 else_branch,
-            },
-        )
+            }),
+        })
         .context(expect("if expression"))
         .parse_next(i)
 }
@@ -207,10 +229,14 @@ fn if_then_else(i: &mut Input) -> PResult<AST> {
 fn matching(i: &mut Input) -> PResult<AST> {
     (
         "match",
-        skip_space(value_expression).map(Box::new),
+        skip_space(value_expression),
         elidable_block(matchers, ";"),
     )
-        .map(|(_, argument, matchers)| AST::Matching { argument, matchers })
+        .with_span()
+        .map(|((_, argument, matchers), span)| AST {
+            span,
+            expr: Box::new(Expression::Matching { argument, matchers }),
+        })
         .context(expect("match expression"))
         .parse_next(i)
 }
@@ -242,10 +268,11 @@ fn access(i: &mut Input) -> PResult<AST> {
         primary_value_expression,
         repeat(1.., prefixed(".", identifier::<Name>)),
     )
-        .map(|(arg, ns): (AST, Vec<_>)| {
-            ns.into_iter().fold(arg, |a, name| AST::Access {
-                argument: Box::new(a),
-                name,
+        .with_span()
+        .map(|((arg, ns), span): ((AST, Vec<_>), Span)| {
+            ns.into_iter().fold(arg, |argument, name| AST {
+                span: span.clone(),
+                expr: Box::from(Expression::Access { argument, name }),
             })
         })
         .context(expect("access expression"))
@@ -254,9 +281,14 @@ fn access(i: &mut Input) -> PResult<AST> {
 
 fn primary_value_expression(i: &mut Input) -> PResult<AST> {
     alt((
-        constant.map(AST::Constant),
-        qualified_name.map(AST::Variable),
-        tuple(value_expression).map(AST::Tuple),
+        constant.with_span().map(From::from),
+        qualified_name::<Name, QualifiedName>
+            .with_span()
+            .map(From::from),
+        tuple(value_expression).with_span().map(|(v, span)| AST {
+            span,
+            expr: Box::new(Expression::Tuple(v)),
+        }),
         parenthesized(value_expression),
     ))
     .context(expect("primary value expression"))
@@ -265,26 +297,60 @@ fn primary_value_expression(i: &mut Input) -> PResult<AST> {
 
 fn type_expression(i: &mut Input) -> PResult<AST> {
     alt((
-        UNIT.map(|_| AST::UnitType),
-        BOTTOM.map(|_| AST::BottomType),
-        primitive_type.map(AST::PrimitiveType),
-        tuple_type(type_expression),
-        function_type(type_expression),
-        reference_type(type_expression).map(AST::ReferenceType),
-        unique_type(type_expression).map(AST::UniqueType),
+        UNIT.with_span().map(|(_, span)| AST {
+            span,
+            expr: Box::new(Expression::UnitType),
+        }),
+        BOTTOM.with_span().map(|(_, span)| AST {
+            span,
+            expr: Box::new(Expression::BottomType),
+        }),
+        primitive_type.with_span().map(|(p, span)| AST {
+            span,
+            expr: Box::new(Expression::PrimitiveType(p)),
+        }),
+        tuple_type(type_expression).with_span().map(From::from),
+        function_type(type_expression).with_span().map(From::from),
+        reference_type(type_expression)
+            .with_span()
+            .map(|(t, span)| AST {
+                span,
+                expr: Box::new(Expression::ReferenceType(t)),
+            }),
+        unique_type,
         type_call,
-        qualified_name.map(AST::Variable),
+        qualified_name::<Name, QualifiedName>
+            .with_span()
+            .map(From::from),
         parenthesized(type_expression),
     ))
     .context(expect("type expression"))
     .parse_next(i)
 }
 
+fn unique_type(i: &mut Input) -> PResult<AST> {
+    prefixed("!", type_expression)
+        .with_span()
+        .map(|(t, span)| AST {
+            span,
+            expr: Box::new(Expression::UniqueType(t)),
+        })
+        .context(expect("unique type"))
+        .parse_next(i)
+}
+
 fn type_call(i: &mut Input) -> PResult<AST> {
     (qualified_name, "::", type_arguments(type_expression))
-        .map(|(qn, _, type_arguments)| AST::TypeCall {
-            type_callee: Box::new(AST::Variable(qn)),
-            type_arguments,
+        .with_span()
+        .map(|((qn, _, type_arguments), span)| AST {
+            span: span.clone(),
+            expr: Box::new(Expression::TypeCall {
+                type_callee: AST {
+                    span,
+                    expr: Box::new(Expression::Variable(qn)),
+                },
+                type_arguments,
+            }),
         })
         .context(expect("type call expression"))
         .parse_next(i)

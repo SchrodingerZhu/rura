@@ -53,13 +53,13 @@ fn parse_lir_type(i: &mut Input) -> PResult<LirType> {
         UNIT.map(|_| LirType::Unit),
         BOTTOM.map(|_| LirType::Bottom),
         primitive_type.map(LirType::Primitive),
-        tuple_type(parse_lir_type),
+        tuple_type(parse_lir_type).map(LirType::Tuple),
         parse_type_variable.map(LirType::TypeVar),
         parse_type_hole,
         parse_reuse_token_type,
         parse_unique_type,
-        reference_type(parse_lir_type).map(LirType::Ref),
-        function_type(parse_lir_type),
+        reference_type(parse_lir_type).map(|t| LirType::Ref(Box::new(t))),
+        function_type(parse_lir_type).map(From::from),
         parse_object_type_content.map(|(name, params)| LirType::Object(name, params)),
     ))
     .context(expect("lir type"))
@@ -801,7 +801,7 @@ fn parse_inductive_type_def(i: &mut Input) -> PResult<InductiveTypeDef> {
     (
         "enum",
         skip_space(qualified_name),
-        opt_or_default(type_parameters),
+        opt_or_default(type_parameters).map(|ps| ps.into_vec().into_iter().map(|p| p.0).collect()),
         skip_space(bounds),
         "{",
         ctors,
@@ -1452,7 +1452,7 @@ mod test {
                         params: Box::new([])
                     },
                     CtorDef {
-                        span: 54..58,
+                        span: 54..73,
                         name: "Cons".into(),
                         params: Box::new([
                             (

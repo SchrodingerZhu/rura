@@ -135,28 +135,14 @@ where
     (lhs, skip_space(infix), rhs).map(|(l, _, r)| (l, r))
 }
 
-fn unicode_identifier<'a>(i: &mut Input<'a>) -> PResult<Input<'a>> {
-    (one_of(is_xid_start), take_while(0.., is_xid_continue))
-        .recognize()
-        .map(Located::new)
-        .context(expect("identifier"))
-        .parse_next(i)
-}
-
 pub fn identifier<'a, ID>(i: &mut Input<'a>) -> PResult<ID>
 where
     ID: From<Input<'a>>,
 {
-    unicode_identifier.map(From::from).parse_next(i)
-}
-
-pub fn identifier_span<'a, ID>(i: &mut Input<'a>) -> PResult<(ID, Span)>
-where
-    ID: From<Input<'a>>,
-{
-    unicode_identifier
-        .with_span()
-        .map(|(id, span)| (ID::from(id), span))
+    (one_of(is_xid_start), take_while(0.., is_xid_continue))
+        .recognize()
+        .map(|s| From::from(Located::new(s)))
+        .context(expect("identifier"))
         .parse_next(i)
 }
 
@@ -334,20 +320,19 @@ pub fn prefix_op<'a, O, O2, O3, P, F>(
     val: F,
 ) -> impl Parser<Input<'a>, O3, ContextError>
 where
-    O3: From<(UnOp, Box<O>)>,
-
+    O3: From<(UnOp, O, Span)>,
     F: Parser<Input<'a>, O, ContextError>,
     P: Parser<Input<'a>, O2, ContextError>,
 {
-    prefixed(prefix, val.map(Box::new))
-        .map(move |v| From::from((op, v)))
+    prefixed(prefix, val)
+        .with_span()
+        .map(move |(v, span)| From::from((op, v, span)))
         .context(expect("prefix operation"))
 }
 
 pub fn unary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    O2: From<(UnOp, Box<O>)>,
-
+    O2: From<(UnOp, O, Span)>,
     F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     alt((
@@ -362,20 +347,19 @@ pub fn infix_op<'a, O, O2, O3, II, F>(
     val: F,
 ) -> impl Parser<Input<'a>, O3, ContextError>
 where
-    O3: From<(Box<O>, BinOp, Box<O>)>,
-
+    O3: From<(O, BinOp, O, Span)>,
     F: Copy + Parser<Input<'a>, O, ContextError>,
     II: Copy + Parser<Input<'a>, O2, ContextError>,
 {
-    infixed(val.map(Box::new), infix, val.map(Box::new))
-        .map(move |(lhs, rhs)| From::from((lhs, op, rhs)))
+    infixed(val, infix, val)
+        .with_span()
+        .map(move |((lhs, rhs), span)| From::from((lhs, op, rhs, span)))
         .context(expect("infix operation"))
 }
 
 pub fn binary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    O2: From<(Box<O>, BinOp, Box<O>)>,
-
+    O2: From<(O, BinOp, O, Span)>,
     F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     alt((
@@ -448,8 +432,9 @@ where
     F: Copy + Parser<Input<'a>, O, ContextError>,
     ID: From<Input<'a>>,
 {
-    (identifier_span, skip_space(members(typ)))
-        .map(|((name, span), params)| Constructor { span, name, params })
+    (identifier, skip_space(members(typ)))
+        .with_span()
+        .map(|((name, params), span)| Constructor { span, name, params })
         .context(expect("constructor"))
 }
 
@@ -485,11 +470,11 @@ where
         .parse_next(i)
 }
 
-pub fn type_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>
+pub fn type_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[(ID, Span)]>>
 where
     ID: From<Input<'a>>,
 {
-    bracketed(separated(1.., skip_space(identifier), ","))
+    bracketed(separated(1.., skip_space(identifier).with_span(), ","))
         .map(|v: Vec<_>| v.into_boxed_slice())
         .context(expect("type parameters"))
         .parse_next(i)
@@ -516,21 +501,20 @@ where
     .context(expect("tuple"))
 }
 
-pub fn tuple_type<'a, O, O2, F>(typ: F) -> impl Parser<Input<'a>, O2, ContextError>
+pub fn tuple_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<[O]>, ContextError>
 where
-    O2: From<Box<[O]>>,
-
-    F: Parser<Input<'a>, O, ContextError>,
+    F: Copy + Parser<Input<'a>, O, ContextError>,
 {
-    parenthesized(separated(1.., skip_space(typ), ","))
-        .map(|types: Vec<_>| From::from(types.into_boxed_slice()))
-        .context(expect("tuple type"))
+    parenthesized(alt((
+        separated(2.., skip_space(typ), ","),
+        suffixed(typ, ",").map(|v| vec![v]),
+    )))
+    .map(|v: Vec<_>| v.into_boxed_slice())
+    .context(expect("tuple type"))
 }
 
-pub fn function_type<'a, O, O2, F>(typ: F) -> impl Parser<Input<'a>, O2, ContextError>
+pub fn function_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, (Box<[O]>, O), ContextError>
 where
-    O2: From<(Box<[O]>, Box<O>)>,
-
     F: Copy + Parser<Input<'a>, O, ContextError>,
 {
     (
@@ -538,28 +522,17 @@ where
         skip_space(parenthesized(separated(0.., skip_space(typ), ",")))
             .map(|p: Vec<_>| p.into_boxed_slice()),
         "->",
-        skip_space(typ).map(Box::new),
+        skip_space(typ),
     )
-        .map(|(_, params, _, ret)| From::from((params, ret)))
+        .map(|(_, params, _, ret)| (params, ret))
         .context(expect("function type"))
 }
 
-pub fn reference_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<O>, ContextError>
+pub fn reference_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, O, ContextError>
 where
     F: Parser<Input<'a>, O, ContextError>,
 {
-    prefixed("&", typ)
-        .map(Box::new)
-        .context(expect("reference type"))
-}
-
-pub fn unique_type<'a, O, F>(typ: F) -> impl Parser<Input<'a>, Box<O>, ContextError>
-where
-    F: Parser<Input<'a>, O, ContextError>,
-{
-    prefixed("!", typ)
-        .map(Box::new)
-        .context(expect("unique type"))
+    prefixed("&", typ).context(expect("reference type"))
 }
 
 #[cfg(test)]

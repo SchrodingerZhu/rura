@@ -73,7 +73,11 @@ impl Display for PrettyPrint<'_, LirType> {
                 Ok(())
             }
             LirType::Tuple(types) => {
-                fmt_delimited(f, "(", types.iter().map(PrettyPrint::new), ", ", ")")
+                if types.len() == 1 {
+                    write!(f, "({},)", PrettyPrint::new(types.first().unwrap()))
+                } else {
+                    fmt_delimited(f, "(", types.iter().map(PrettyPrint::new), ", ", ")")
+                }
             }
             LirType::TypeVar(var) => write!(f, "{}", PrettyPrint::new(var)),
             LirType::Hole(ty) => write!(f, "◊{}", PrettyPrint::new(&**ty)),

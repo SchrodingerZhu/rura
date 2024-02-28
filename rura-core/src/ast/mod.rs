@@ -153,45 +153,52 @@ pub type Parameters<T> = Box<[Parameter<T>]>;
 #[derive(Clone, Debug)]
 pub struct Declaration<T> {
     pub span: Span,
-    pub name: Name,
-    pub type_parameters: Option<Parameters<T>>,
-    pub parameters: Parameters<T>,
-    pub return_type: T,
     pub definition: Definition<T>,
-}
-
-impl Declaration<AST> {
-    pub fn type_declaration(
-        span: Span,
-        name: Name,
-        types: Option<Box<[(Name, Span)]>>,
-        definition: Definition<AST>,
-    ) -> Self {
-        Self {
-            span: span.clone(),
-            name,
-            type_parameters: types.map(Parameter::type_parameters),
-            parameters: Default::default(),
-            return_type: AST {
-                span,
-                expr: Box::from(Expression::Type),
-            },
-            definition,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
 pub enum Definition<T> {
-    Undefined,
-    Function(Box<T>),
-    Enum(DefinitionMembers<Constructor<Name, T>>),
-    Struct(DefinitionMembers<T>),
+    Undefined(UndefinedDefinition<T>),
+    Function(FunctionDefinition<T>),
+    Enum(EnumDefinition<T>),
+    Struct(StructDefinition<T>),
     ExternalModule(ModuleID),
+    Submodule(Box<[Declaration<T>]>),
 }
 
 #[derive(Clone, Debug)]
-pub enum DefinitionMembers<T> {
+pub struct UndefinedDefinition<T> {
+    pub name: Name,
+    pub type_parameters: Option<Parameters<T>>,
+    pub parameters: Parameters<T>,
+    pub return_type: T,
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionDefinition<T> {
+    pub name: Name,
+    pub type_parameters: Option<Parameters<T>>,
+    pub parameters: Parameters<T>,
+    pub return_type: T,
+    pub body: T,
+}
+
+#[derive(Clone, Debug)]
+pub struct EnumDefinition<T> {
+    pub name: Name,
+    pub type_parameters: Option<Parameters<T>>,
+    pub members: DatatypeMembers<Constructor<Name, T>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructDefinition<T> {
+    pub name: Name,
+    pub type_parameters: Option<Parameters<T>>,
+    pub members: DatatypeMembers<T>,
+}
+
+#[derive(Clone, Debug)]
+pub enum DatatypeMembers<T> {
     Unchecked(Box<[(Name, T)]>),
     Checked(HashMap<Name, T>),
 }

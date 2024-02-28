@@ -5,8 +5,8 @@ use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::{PResult, Parser};
 
 use rura_core::ast::{
-    Declaration, Definition, DefinitionMembers, Expression, Matcher, Name, Parameter,
-    QualifiedName, AST,
+    DatatypeMembers, Declaration, Definition, EnumDefinition, Expression, FunctionDefinition,
+    Matcher, Name, Parameter, QualifiedName, StructDefinition, AST,
 };
 use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::{Constructor, Input, Span};
@@ -34,32 +34,28 @@ fn function_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "fn",
         skip_space(identifier),
-        opt(type_parameters).map(|ps| ps.map(Parameter::type_parameters)),
+        opt(type_parameters.map(Parameter::type_parameters)),
         skip_space(function_parameters(type_expression)),
         opt(prefixed("->", skip_space(type_expression))),
-        elidable_block(function_definition, ";"),
+        elidable_block(block_statement, ";"),
     )
         .with_span()
         .map(
-            |((_, name, type_parameters, parameters, ret, definition), span)| Declaration {
+            |((_, name, type_parameters, parameters, ret, body), span)| Declaration {
                 span: span.clone(),
-                name,
-                type_parameters,
-                parameters,
-                return_type: ret.unwrap_or(AST {
-                    span,
-                    expr: Box::new(Expression::Type),
+                definition: Definition::Function(FunctionDefinition {
+                    name,
+                    type_parameters,
+                    parameters,
+                    return_type: ret.unwrap_or(AST {
+                        span,
+                        expr: Box::new(Expression::UnitType),
+                    }),
+                    body,
                 }),
-                definition,
             },
         )
         .context(expect("function declaration"))
-        .parse_next(i)
-}
-
-fn function_definition(i: &mut Input) -> PResult<Definition<AST>> {
-    block_statement
-        .map(|e| Definition::Function(Box::new(e)))
         .parse_next(i)
 }
 
@@ -67,24 +63,30 @@ fn enum_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "enum",
         skip_space(identifier),
-        opt(type_parameters),
-        elidable_block(enum_definition, ";"),
+        opt(type_parameters.map(Parameter::type_parameters)),
+        elidable_block(enum_constructors, ";"),
     )
         .with_span()
-        .map(|((_, name, types, def), span)| Declaration::type_declaration(span, name, types, def))
+        .map(|((_, name, type_parameters, members), span)| Declaration {
+            span,
+            definition: Definition::Enum(EnumDefinition {
+                name,
+                type_parameters,
+                members,
+            }),
+        })
         .context(expect("enum declaration"))
         .parse_next(i)
 }
 
-fn enum_definition(i: &mut Input) -> PResult<Definition<AST>> {
+fn enum_constructors(i: &mut Input) -> PResult<DatatypeMembers<Constructor<Name, AST>>> {
     separated(1.., skip_space(constructor(type_expression)), elidable(","))
-        .map(|ctors: Vec<_>| {
-            Definition::Enum(DefinitionMembers::Unchecked(
-                ctors
-                    .into_iter()
+        .map(|v: Vec<_>| {
+            DatatypeMembers::Unchecked(
+                v.into_iter()
                     .map(|c: Constructor<Name, AST>| (c.name.clone(), c))
                     .collect(),
-            ))
+            )
         })
         .parse_next(i)
 }
@@ -93,18 +95,25 @@ fn struct_declaration(i: &mut Input) -> PResult<Declaration<AST>> {
     (
         "struct",
         skip_space(identifier),
-        opt(type_parameters),
-        elidable_block(struct_definition, ";"),
+        opt(type_parameters.map(Parameter::type_parameters)),
+        elidable_block(struct_fields, ";"),
     )
         .with_span()
-        .map(|((_, name, types, def), span)| Declaration::type_declaration(span, name, types, def))
+        .map(|((_, name, type_parameters, members), span)| Declaration {
+            span,
+            definition: Definition::Struct(StructDefinition {
+                name,
+                type_parameters,
+                members,
+            }),
+        })
         .context(expect("struct declaration"))
         .parse_next(i)
 }
 
-fn struct_definition(i: &mut Input) -> PResult<Definition<AST>> {
+fn struct_fields(i: &mut Input) -> PResult<DatatypeMembers<AST>> {
     separated(1.., skip_space(field(type_expression)), elidable(","))
-        .map(|f: Vec<_>| Definition::Struct(DefinitionMembers::Unchecked(f.into_boxed_slice())))
+        .map(|f: Vec<_>| DatatypeMembers::Unchecked(f.into_boxed_slice()))
         .parse_next(i)
 }
 

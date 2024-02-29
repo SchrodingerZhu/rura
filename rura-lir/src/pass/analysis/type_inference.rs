@@ -755,4 +755,21 @@ mod test {
             err = 0
         );
     }
+
+    #[test]
+    fn test_external_funcall() {
+        test_type_inference!(
+            input = r#"
+        module typing {
+            fn length(%0 : str) -> usize;
+            fn test() -> usize {
+                %0 = constant "hello" : str;
+                %1 = call length (%0);
+                return %1;
+            }
+        }
+        "#,
+            err = 0
+        );
+    }
 }

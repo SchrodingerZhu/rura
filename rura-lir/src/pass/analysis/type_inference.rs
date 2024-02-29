@@ -1,10 +1,11 @@
 use rura_core::{Constant, PrimitiveType};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use rura_core::lir::ir::{
     BinaryOp, FunctionDef, FunctionPrototype, InductiveTypeDef, LExpr, Lir, Module,
 };
-use rura_core::lir::types::{LirType, TypeVar};
+use rura_core::lir::types::{subst, unified_compare, LirType, TypeVar};
 use rura_core::lir::{Ident, QualifiedName};
 
 use crate::pass::visitor::default_visit_function_def;
@@ -71,6 +72,14 @@ pub enum Error {
     InvalidReturnValue(usize, Box<LirType>),
     #[error("target type {} is not pemissible in casting", PrettyPrint::new(&**.0))]
     InvalidCastTarget(Box<LirType>),
+    #[error("unknown function {0} encountered")]
+    UnknownFunction(QualifiedName),
+    #[error("unknown inductive type {0} encountered")]
+    UnknownInductive(QualifiedName),
+    #[error("failed to instantiate type variables inside {}", PrettyPrint::new(&**.0))]
+    FailedToInstantiate(Box<LirType>),
+    #[error("insufficient number of arguments for function call")]
+    InsufficientArguments,
 }
 
 pub struct TypeInferenceContext<'a> {
@@ -343,7 +352,43 @@ impl LirVisitor for TypeInference<'_> {
                     context.set_type(op.result, LirType::Primitive(PrimitiveType::Bool));
                 }
             }
-            Lir::Call(_) => todo!("figure out how to look up function type"),
+            Lir::Call(funcall) => match self.dictionary.functions.get(&funcall.function) {
+                Some(prototype) => {
+                    let unifier = prototype
+                        .type_params
+                        .iter()
+                        .zip(funcall.type_params.iter())
+                        .collect::<HashMap<_, _>>();
+                    match subst(&unifier, &prototype.return_type) {
+                        Some(ret_ty) => {
+                            context.set_type(funcall.result, ret_ty.clone());
+                            for ((_, expected), arg) in
+                                prototype.params.iter().zip(funcall.args.iter())
+                            {
+                                let arg_ty = get_type!(context, *arg);
+                                if !unified_compare(&unifier, expected, arg_ty) {
+                                    context.invalid_function_argument(*arg, arg_ty.clone());
+                                    return;
+                                }
+                            }
+                        }
+                        None => {
+                            context.errors.push((
+                                context.context.clone().into(),
+                                Error::FailedToInstantiate(Box::new(prototype.return_type.clone())),
+                            ));
+                            context.should_continue = false;
+                        }
+                    }
+                }
+                None => {
+                    context.errors.push((
+                        context.context.clone().into(),
+                        Error::UnknownFunction(funcall.function.clone()),
+                    ));
+                    context.should_continue = false;
+                }
+            },
             Lir::Clone { value, result } => {
                 let ty = get_type!(context, *value);
                 if !ty.is_object() {

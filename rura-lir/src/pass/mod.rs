@@ -9,8 +9,8 @@ pub trait Pass {
 }
 
 pub enum BoxedPass<'a> {
-    Analysis(Box<dyn analysis::AnalysisPass<'a>>),
-    Diagnostic(Box<dyn diagnostic::DiagnosticPass<'a>>),
+    Analysis(Box<dyn analysis::AnalysisPass<'a> + 'a>),
+    Diagnostic(Box<dyn diagnostic::DiagnosticPass<'a> + 'a>),
 }
 
 pub type PassEntry = for<'a> fn(&'a Module, &'_ toml::Table) -> BoxedPass<'a>;

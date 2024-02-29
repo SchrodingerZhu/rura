@@ -1,7 +1,9 @@
 use rura_core::{Constant, PrimitiveType};
 use std::collections::{HashMap, HashSet};
 
-use rura_core::lir::ir::{BinaryOp, FunctionDef, LExpr, Lir, Module};
+use rura_core::lir::ir::{
+    BinaryOp, FunctionDef, FunctionPrototype, InductiveTypeDef, LExpr, Lir, Module,
+};
 use rura_core::lir::types::{LirType, TypeVar};
 use rura_core::lir::{Ident, QualifiedName};
 
@@ -13,9 +15,37 @@ use crate::pprint::PrettyPrint;
 use super::free_variable::get_free_variable;
 use super::AnalysisPass;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-struct TypeInference {
+#[derive(Debug, Clone)]
+struct TypeInference<'a> {
     types: HashMap<QualifiedName, HashMap<usize, LirType>>,
+    dictionary: Dictionary<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Dictionary<'a> {
+    functions: HashMap<&'a QualifiedName, &'a FunctionPrototype>,
+    inductives: HashMap<&'a QualifiedName, &'a InductiveTypeDef>,
+}
+
+impl<'a> From<&'a Module> for Dictionary<'a> {
+    fn from(module: &'a Module) -> Self {
+        let functions = module
+            .functions
+            .iter()
+            .map(|x| &x.prototype)
+            .chain(module.external_functions.iter())
+            .map(|x| (&x.name, x))
+            .collect();
+        let inductives = module
+            .inductive_types
+            .iter()
+            .map(|x| (&x.name, x))
+            .collect();
+        Self {
+            functions,
+            inductives,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -234,7 +264,7 @@ macro_rules! get_type {
     };
 }
 
-impl LirVisitor for TypeInference {
+impl LirVisitor for TypeInference<'_> {
     type Context<'a> = TypeInferenceContext<'a>;
     fn visit_function_def<'a>(
         &mut self,
@@ -565,13 +595,13 @@ impl LirVisitor for TypeInference {
     }
 }
 
-impl Pass for TypeInference {
+impl Pass for TypeInference<'_> {
     fn get_identifier(&self) -> &str {
         "type_inference"
     }
 }
 
-impl<'a> AnalysisPass<'a> for TypeInference {
+impl<'a> AnalysisPass<'a> for TypeInference<'a> {
     fn analyze(
         &mut self,
         module: &'a rura_core::lir::ir::Module,
@@ -590,13 +620,17 @@ impl<'a> AnalysisPass<'a> for TypeInference {
     }
 }
 
-pub fn get_pass<'a>(_: &'a Module, _: &'_ toml::Table) -> BoxedPass<'a> {
-    BoxedPass::Analysis(Box::<TypeInference>::default())
+pub fn get_pass<'a>(module: &'a Module, _: &'_ toml::Table) -> BoxedPass<'a> {
+    BoxedPass::Analysis(Box::new(TypeInference {
+        types: HashMap::new(),
+        dictionary: Dictionary::from(module),
+    }))
 }
 
 #[cfg(test)]
 mod test {
     use crate::{parser, pass::visitor::LirVisitor, pprint::PrettyPrint};
+    use std::collections::HashMap;
     use winnow::Located;
 
     macro_rules! test_type_inference {
@@ -605,7 +639,10 @@ mod test {
             let mut module = parser::parse_module(&mut input).unwrap();
 
             let types = {
-                let mut visitor = super::TypeInference::default();
+                let mut visitor = super::TypeInference {
+                    types: HashMap::new(),
+                    dictionary: super::Dictionary::from(&module),
+                };
                 let mut context = super::TypeInferenceContext::new();
                 visitor.visit_module(&module, &mut context);
                 for (ctx, err) in context.errors.iter() {

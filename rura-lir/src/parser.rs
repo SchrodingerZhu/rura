@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use winnow::ascii::{alpha1, digit1};
-use winnow::combinator::{self, alt, opt, preceded, repeat, separated};
+use winnow::combinator::{self, alt, delimited, opt, preceded, repeat, separated};
 use winnow::error::ContextError;
 use winnow::{PResult, Parser};
 
@@ -808,23 +808,20 @@ fn parse_inductive_type_def(i: &mut Input) -> PResult<InductiveTypeDef> {
     let ctors = separated(1.., skip_space(constructor(parse_lir_type)), ",")
         .context(expect("constructors"))
         .map(Vec::into_boxed_slice);
+    let ctors = delimited("{", ctors, "}");
     (
         "enum",
         skip_space(qualified_name),
         opt_or_default(type_parameters).map(|ps| ps.into_vec().into_iter().map(|p| p.0).collect()),
         skip_space(bounds),
-        "{",
-        ctors,
-        "}",
+        combinator::alt((ctors, ";".default_value())),
     )
-        .map(
-            |(_, name, type_params, bounds, _, ctors, _)| InductiveTypeDef {
-                name,
-                type_params,
-                bounds,
-                ctors,
-            },
-        )
+        .map(|(_, name, type_params, bounds, ctors)| InductiveTypeDef {
+            name,
+            type_params,
+            bounds,
+            ctors,
+        })
         .context(expect("inductive type definition"))
         .parse_next(i)
 }

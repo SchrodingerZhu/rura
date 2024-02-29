@@ -74,8 +74,8 @@ pub enum Error {
     InvalidCastTarget(Box<LirType>),
     #[error("unknown function {0} encountered")]
     UnknownFunction(QualifiedName),
-    #[error("unknown inductive type {0} encountered")]
-    UnknownInductive(QualifiedName),
+    #[error("unknown inductive type constructor {0}::{1} encountered")]
+    UnknownInductive(QualifiedName, Ident),
     #[error("failed to instantiate type variables inside {}", PrettyPrint::new(&**.0))]
     FailedToInstantiate(Box<LirType>),
     #[error("insufficient number of arguments for function call")]

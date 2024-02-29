@@ -152,3 +152,44 @@ pub fn unified_compare<'a>(
         _ => false,
     }
 }
+
+pub fn subst(unifier: &HashMap<&Ident, &LirType>, ty: &LirType) -> Option<LirType> {
+    let ty = match ty {
+        LirType::Primitive(_) | LirType::Unit | LirType::Bottom => ty.clone(),
+        LirType::Closure(params, ret) => {
+            let params = params
+                .iter()
+                .map(|x| subst(unifier, x))
+                .collect::<Option<Vec<_>>>()?;
+            let ret = subst(unifier, ret)?;
+            LirType::Closure(params.into_boxed_slice(), Box::new(ret))
+        }
+        LirType::Object(name, params) => {
+            let params = params
+                .iter()
+                .map(|x| subst(unifier, x))
+                .collect::<Option<Vec<_>>>()?;
+            LirType::Object(name.clone(), params.into_boxed_slice())
+        }
+        LirType::Tuple(components) => {
+            let components = components
+                .iter()
+                .map(|x| subst(unifier, x))
+                .collect::<Option<Vec<_>>>()?;
+            LirType::Tuple(components.into_boxed_slice())
+        }
+        LirType::TypeVar(TypeVar::Plain(ident)) => {
+            if let Some(ty) = unifier.get(ident) {
+                (*ty).clone()
+            } else {
+                ty.clone()
+            }
+        }
+        LirType::Hole(ty) => LirType::Hole(Box::new(subst(unifier, ty)?)),
+        LirType::Ref(ty) => LirType::Ref(Box::new(subst(unifier, ty)?)),
+        LirType::Token(ty) => LirType::Token(Box::new(subst(unifier, ty)?)),
+        LirType::Unique(ty) => LirType::Unique(Box::new(subst(unifier, ty)?)),
+        _ => return None,
+    };
+    Some(ty)
+}

@@ -616,14 +616,17 @@ fn parse_call_instr(i: &mut Input) -> PResult<Lir> {
         skip_space("="),
         "call",
         skip_space(qualified_name),
+        combinator::opt(type_arguments(parse_lir_type)),
+        ws_or_comment,
         parse_operand_list(),
         ";",
     )
-        .map(|(result, _, _, function, args, _)| {
+        .map(|(result, _, _, function, type_params, _, args, _)| {
             Lir::Call(Box::new(FunctionCall {
                 result,
                 function,
                 args,
+                type_params: type_params.unwrap_or_default(),
             }))
         })
         .parse_next(i)
@@ -698,9 +701,15 @@ fn parse_curry_instr(i: &mut Input) -> PResult<Lir> {
         skip_space("="),
         "curry",
         skip_space(qualified_name),
+        combinator::opt(type_arguments(parse_lir_type)),
+        ws_or_comment,
         ";",
     )
-        .map(|(result, _, _, function, _)| Lir::Curry { result, function })
+        .map(|(result, _, _, function, type_params, _, _)| Lir::Curry {
+            result,
+            function,
+            type_params: type_params.unwrap_or_default(),
+        })
         .parse_next(i)
 }
 
@@ -1290,7 +1299,8 @@ mod test {
             Lir::Call(Box::new(FunctionCall {
                 result: 1,
                 function: QualifiedName::new(Box::new([Ident::new("test")])),
-                args: Box::new([2, 3])
+                args: Box::new([2, 3]),
+                type_params: Box::new([])
             }))
         );
     }

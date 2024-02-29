@@ -260,6 +260,8 @@ pub struct UnaryOp {
 pub struct FunctionCall {
     /// Identifier of the function to call
     pub function: QualifiedName,
+    /// Type parameters
+    pub type_params: Box<[LirType]>,
     /// Identifiers of the arguments
     pub args: Box<[usize]>,
     /// Identifier of the result
@@ -365,6 +367,7 @@ pub enum Lir {
     /// Convert a normal function to a closure
     Curry {
         function: QualifiedName,
+        type_params: Box<[LirType]>,
         result: usize,
     },
 

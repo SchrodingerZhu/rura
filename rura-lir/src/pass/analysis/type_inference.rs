@@ -432,7 +432,11 @@ impl LirVisitor for TypeInference {
                     context.invalid_operand(*value, value_type.clone());
                 }
             }
-            Lir::Curry { function, result } => {
+            Lir::Curry {
+                function,
+                result,
+                type_params,
+            } => {
                 todo!("implement after function prototype lookup is ready")
             }
             Lir::Unreachable { panic } => {}

@@ -145,11 +145,17 @@ impl Display for Var {
 
 impl Display for PrettyPrint<'_, FunctionCall> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "%{} = call {} (",
-            self.target.result, self.target.function
-        )?;
+        write!(f, "%{} = call {}", self.target.result, self.target.function)?;
+        if !self.target.type_params.is_empty() {
+            fmt_delimited(
+                f,
+                "<",
+                self.target.type_params.iter().map(PrettyPrint::new),
+                ", ",
+                ">",
+            )?;
+        }
+        write!(f, " (")?;
         fmt_separated(f, self.target.args.iter().copied().map(Var), ", ")?;
         write!(f, ");")
     }
@@ -517,7 +523,17 @@ impl Display for PrettyPrint<'_, Lir> {
                 write!(f, "%{} = constant {};", result, PrettyPrint::new(&**value))
             }
             Lir::Fill { hole, value } => write!(f, "fill %{} <- %{};", hole, value),
-            Lir::Curry { function, result } => write!(f, "%{} = curry %{};", result, function),
+            Lir::Curry {
+                function,
+                result,
+                type_params,
+            } => {
+                write!(f, "%{} = curry %{}", result, function)?;
+                if !type_params.is_empty() {
+                    fmt_delimited(f, "<", type_params.iter().map(PrettyPrint::new), ", ", ">")?;
+                }
+                write!(f, ";")
+            }
             Lir::Unreachable { panic } => {
                 if *panic {
                     write!(f, "unreachable [panic];")
@@ -652,6 +668,7 @@ mod test {
             result: 0,
             function: QualifiedName::new(Box::new([Ident::new("foo")])),
             args: [1, 2].into(),
+            type_params: Box::new([]),
         };
         assert_eq!(
             format!("{}", PrettyPrint::new(&call)),

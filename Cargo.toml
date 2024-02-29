@@ -7,5 +7,6 @@ members = [
     "rura-grammar",
     "rura-typing",
     "rura-parsing",
-    "rura-core", "rura-opt",
+    "rura-core",
+    "rura-opt",
 ]

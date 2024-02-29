@@ -261,9 +261,9 @@ fn if_then_else(i: &mut Input) -> PResult<AST> {
     (
         "if",
         skip_space(value_expression),
-        skip_space(block_statement),
-        "else",
-        skip_space(block_statement),
+        braced(block_statement),
+        skip_space("else"),
+        braced(block_statement),
     )
         .with_span()
         .map(|((_, condition, then_branch, _, else_branch), span)| AST {

@@ -1,6 +1,7 @@
-use rura_core::ast::{Definition, ModuleID};
+use rura_core::ast::{Definition, Expression, ModuleID};
+use rura_core::{Constant, Input};
 
-use crate::module;
+use crate::{if_then_else, module};
 
 #[test]
 fn it_parses_empty() {
@@ -13,7 +14,16 @@ fn it_parses_empty() {
 fn it_parses_braced_code() {
     const INPUT: &str = r#"
 mod m1 {
-    fn f1() {}
+    fn f1   () {
+  }
+
+    fn f2   < T >  () -> i32 {
+        if 42 {
+            42
+        } else {
+            69
+        }
+    }
 }
 
    mod m2   ;
@@ -61,4 +71,40 @@ struct   s1   <   T, U > {
         Definition::Struct(d) => assert_eq!(d.name.as_str(), "s1"),
         _ => assert!(false),
     }
+}
+
+#[test]
+fn it_parses_if_expression() {
+    let mut input = Input::new("if true { 42 } else { 69 }");
+    let ast = if_then_else(&mut input).unwrap();
+    let (c, t, e) = match ast.expr.as_ref() {
+        Expression::IfThenElse {
+            condition,
+            then_branch,
+            else_branch,
+        } => (condition, then_branch, else_branch),
+        _ => {
+            assert!(false);
+            unreachable!()
+        }
+    };
+    match (c.expr.as_ref(), t.expr.as_ref(), e.expr.as_ref()) {
+        (Expression::Constant(c), Expression::Constant(t), Expression::Constant(e)) => {
+            match (c, t, e) {
+                (Constant::Bool(c), Constant::I8(t), Constant::I8(e)) => {
+                    assert!(c);
+                    assert_eq!(*t, 42);
+                    assert_eq!(*e, 69);
+                }
+                _ => {
+                    assert!(false);
+                    unreachable!()
+                }
+            }
+        }
+        _ => {
+            assert!(false);
+            unreachable!()
+        }
+    };
 }

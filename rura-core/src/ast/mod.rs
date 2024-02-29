@@ -96,7 +96,7 @@ impl Display for ModuleID {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualifiedName {
-    pub module_id: ModuleID,
+    pub module_id: Option<ModuleID>,
     pub name: Name,
 }
 
@@ -109,10 +109,12 @@ impl From<Box<[Name]>> for QualifiedName {
                 modules.push(name);
                 continue;
             }
-            return Self {
-                module_id: From::from(modules.into_boxed_slice()),
-                name,
+            let module_id = if modules.is_empty() {
+                None
+            } else {
+                Some(From::from(modules.into_boxed_slice()))
             };
+            return Self { module_id, name };
         }
         unreachable!()
     }
@@ -120,7 +122,10 @@ impl From<Box<[Name]>> for QualifiedName {
 
 impl Display for QualifiedName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}::{}", self.module_id, self.name)
+        if let Some(module_id) = &self.module_id {
+            write!(f, "{module_id}::")?;
+        }
+        self.name.fmt(f)
     }
 }
 

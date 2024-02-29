@@ -311,8 +311,6 @@ pub fn constant(i: &mut Input) -> PResult<Constant> {
     alt((
         character,
         boolean,
-        number_f32,
-        number_f64,
         number_i8,
         number_i16,
         number_i32,
@@ -325,6 +323,8 @@ pub fn constant(i: &mut Input) -> PResult<Constant> {
         number_u64,
         number_u128,
         number_usize,
+        number_f32,
+        number_f64,
         string,
     ))
     .parse_next(i)

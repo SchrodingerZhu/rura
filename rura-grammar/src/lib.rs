@@ -191,14 +191,14 @@ fn return_statement(i: &mut Input) -> PResult<AST> {
 
 fn value_expression(i: &mut Input) -> PResult<AST> {
     alt((
+        binary(primary_value_expression, value_expression),
+        unary(value_expression),
         closure,
         indexing,
         call,
         if_then_else,
         matching,
         access,
-        unary(value_expression),
-        binary(primary_value_expression, value_expression),
         primary_value_expression,
     ))
     .context(expect("value expression"))

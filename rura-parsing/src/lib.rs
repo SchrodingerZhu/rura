@@ -142,13 +142,13 @@ pub fn infixed<'a, O, O2, L, R, II>(
     lhs: L,
     infix: II,
     rhs: R,
-) -> impl Parser<Input<'a>, (O, O), ContextError>
+) -> impl Parser<Input<'a>, (O, O2, O), ContextError>
 where
     L: Parser<Input<'a>, O, ContextError>,
     R: Parser<Input<'a>, O, ContextError>,
     II: Parser<Input<'a>, O2, ContextError>,
 {
-    (lhs, skip_space(infix), rhs).map(|(l, _, r)| (l, r))
+    (lhs, skip_space(infix), rhs).map(|(l, x, r)| (l, x, r))
 }
 
 pub fn identifier<'a, ID>(i: &mut Input<'a>) -> PResult<ID>
@@ -346,21 +346,19 @@ where
     ))
 }
 
-pub fn infix_op<'a, O, O2, O3, II, L, R>(
+pub fn infix_op<'a, O, O2, L, R>(
     lhs: L,
-    infix: II,
-    op: BinOp,
+    op: impl Parser<Input<'a>, BinOp, ContextError>,
     rhs: R,
-) -> impl Parser<Input<'a>, O3, ContextError>
+) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    O3: From<(O, BinOp, O, Span)>,
+    O2: From<(O, BinOp, O, Span)>,
     L: Copy + Parser<Input<'a>, O, ContextError>,
     R: Copy + Parser<Input<'a>, O, ContextError>,
-    II: Parser<Input<'a>, O2, ContextError>,
 {
-    infixed(lhs, infix, rhs)
+    infixed(lhs, op, rhs)
         .with_span()
-        .map(move |((lhs, rhs), span)| From::from((lhs, op, rhs, span)))
+        .map(move |((lhs, op, rhs), span)| From::from((lhs, op, rhs, span)))
         .context(expect("infix operation"))
 }
 
@@ -370,23 +368,24 @@ where
     L: Copy + Parser<Input<'a>, O, ContextError>,
     R: Copy + Parser<Input<'a>, O, ContextError>,
 {
-    alt((
-        infix_op(lhs, ">>", BinOp::Shr, rhs),
-        infix_op(lhs, "<<", BinOp::Shl, rhs),
-        infix_op(lhs, "*", BinOp::Mul, rhs),
-        infix_op(lhs, "/", BinOp::Div, rhs),
-        infix_op(lhs, "+", BinOp::Add, rhs),
-        infix_op(lhs, "-", BinOp::Sub, rhs),
-        infix_op(lhs, "%", BinOp::Rem, rhs),
-        infix_op(lhs, "==", BinOp::Eq, rhs),
-        infix_op(lhs, "!=", BinOp::Ne, rhs),
-        infix_op(lhs, "<", BinOp::Lt, rhs),
-        infix_op(lhs, "<=", BinOp::Le, rhs),
-        infix_op(lhs, ">", BinOp::Gt, rhs),
-        infix_op(lhs, ">=", BinOp::Ge, rhs),
-        infix_op(lhs, "&&", BinOp::And, rhs),
-        infix_op(lhs, "||", BinOp::Or, rhs),
-    ))
+    let ops = alt((
+        "<<".value(BinOp::Shl),
+        "*".value(BinOp::Mul),
+        "/".value(BinOp::Div),
+        "+".value(BinOp::Add),
+        "-".value(BinOp::Sub),
+        "%".value(BinOp::Rem),
+        "==".value(BinOp::Eq),
+        "!=".value(BinOp::Ne),
+        "<".value(BinOp::Lt),
+        "<=".value(BinOp::Le),
+        ">".value(BinOp::Gt),
+        ">=".value(BinOp::Ge),
+        "&&".value(BinOp::And),
+        "||".value(BinOp::Or),
+        ">>".value(BinOp::Shr),
+    ));
+    infix_op(lhs, ops, rhs)
 }
 
 pub fn field<'a, O, F, ID>(typ: F) -> impl Parser<Input<'a>, (ID, O), ContextError>

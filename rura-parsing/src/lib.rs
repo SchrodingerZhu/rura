@@ -469,14 +469,24 @@ where
         .map(|p: Vec<_>| p.into_iter().map(From::from).collect())
 }
 
+pub fn function_arguments<'a, O, F>(val: F) -> impl Parser<Input<'a>, Box<[O]>, ContextError>
+where
+    F: Parser<Input<'a>, O, ContextError>,
+{
+    parenthesized(separated(0.., val, ",")).map(|p: Vec<_>| p.into_boxed_slice())
+}
+
 pub fn constructor_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>
 where
     ID: From<Input<'a>>,
 {
-    parenthesized(separated(1.., skip_space(identifier), ","))
-        .map(|v: Vec<_>| v.into_boxed_slice())
-        .context(expect("constructor parameters"))
-        .parse_next(i)
+    alt((
+        braced(separated(1.., skip_space(identifier), ",")),
+        parenthesized(separated(1.., skip_space(identifier), ",")),
+    ))
+    .map(|v: Vec<_>| v.into_boxed_slice())
+    .context(expect("constructor parameters"))
+    .parse_next(i)
 }
 
 pub fn closure_parameters<'a, ID>(i: &mut Input<'a>) -> PResult<Box<[ID]>>

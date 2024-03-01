@@ -10,9 +10,9 @@ use rura_core::keywords::{BOTTOM, UNIT};
 use rura_core::{Constructor, Error, Input, Span};
 use rura_parsing::{
     binary, braced, closure_parameters, constant, constructor, constructor_parameters, elidable,
-    elidable_block, elided_block, expect, field, function_parameters, function_type, identifier,
-    parenthesized, prefixed, primitive_type, qualified_name, reference_type, skip_space, tuple,
-    tuple_type, type_arguments, type_parameters, unary,
+    elidable_block, elided_block, expect, field, function_arguments, function_parameters,
+    function_type, identifier, parenthesized, prefixed, primitive_type, qualified_name,
+    reference_type, skip_space, tuple, tuple_type, type_arguments, type_parameters, unary,
 };
 
 pub fn module(i: &str, id: ModuleID) -> Result<Module, Error> {
@@ -165,9 +165,9 @@ fn let_statement(i: &mut Input) -> PResult<AST> {
         skip_space(identifier),
         opt(prefixed(":", skip_space(type_expression))),
         "=",
-        value_expression,
+        skip_space(value_expression),
         elidable(";"),
-        block_statement,
+        skip_space(block_statement),
     )
         .with_span()
         .map(|((_, name, typ, _, value, _, body), span)| AST {
@@ -208,7 +208,7 @@ fn value_expression(i: &mut Input) -> PResult<AST> {
 fn closure(i: &mut Input) -> PResult<AST> {
     (
         closure_parameters,
-        alt((braced(block_statement), value_expression)),
+        skip_space(alt((braced(block_statement), value_expression))),
     )
         .with_span()
         .map(|((parameters, body), span)| AST {
@@ -220,7 +220,7 @@ fn closure(i: &mut Input) -> PResult<AST> {
 }
 
 fn indexing(i: &mut Input) -> PResult<AST> {
-    (alt((call, primary_value_expression)), ".", dec_uint)
+    (primary_value_expression, skip_space("."), dec_uint)
         .with_span()
         .map(|((tuple, _, index), span)| AST {
             span,
@@ -237,7 +237,7 @@ fn call(i: &mut Input) -> PResult<AST> {
             1..,
             skip_space((
                 opt(prefixed("::", type_arguments(type_expression))),
-                tuple(value_expression),
+                function_arguments(value_expression),
             )),
         ),
     )
@@ -304,9 +304,12 @@ fn matcher(i: &mut Input) -> PResult<Matcher> {
         skip_space(qualified_name),
         opt(skip_space(constructor_parameters)),
         "=>",
-        elidable_block(block_statement, ","),
+        skip_space((
+            alt((braced(block_statement), value_expression)),
+            elidable(","),
+        )),
     )
-        .map(|(constructor, arguments, _, body)| Matcher {
+        .map(|(constructor, arguments, _, (body, _))| Matcher {
             constructor,
             arguments,
             body,
@@ -317,7 +320,7 @@ fn matcher(i: &mut Input) -> PResult<Matcher> {
 
 fn access(i: &mut Input) -> PResult<AST> {
     (
-        primary_value_expression,
+        skip_space(primary_value_expression),
         repeat(1.., prefixed(".", identifier::<Name>)),
     )
         .with_span()

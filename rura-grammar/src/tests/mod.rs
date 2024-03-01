@@ -15,14 +15,23 @@ fn it_parses_braced_code() {
     const INPUT: &str = r#"
 mod m1 {
     fn f1   () {
+    match n {
+            C1=>  {   y  .  a  }  ,
+            // FIXME: Currently don't know how to tackle this lol.
+            // FIXME: Why is this so slow on release mode?
+            // C2 ( x ) => ( ( ( (x . a) :: < T   > () )  . b )   (x)  ) . 10 ,
+             C3  =>  | lol | 1 + 2 * 3  ,
+             C4 { z } =>  | oh | { ! z  } ,
+        }
   }
 
     fn f2   < T >  () -> i32 {
-        if 42 {
-            42
+        let n = if true {
+            let x = 42;
+            x
         } else {
             69
-        }
+        };
     }
 }
 

@@ -336,15 +336,15 @@ fn access(i: &mut Input) -> PResult<AST> {
 
 fn primary_value_expression(i: &mut Input) -> PResult<AST> {
     alt((
-        constant.with_span().map(From::from),
-        qualified_name::<Name, QualifiedName>
-            .with_span()
-            .map(From::from),
+        parenthesized(value_expression),
         tuple(value_expression).with_span().map(|(v, span)| AST {
             span,
             expr: Box::new(Expression::Tuple(v)),
         }),
-        parenthesized(value_expression),
+        constant.with_span().map(From::from),
+        qualified_name::<Name, QualifiedName>
+            .with_span()
+            .map(From::from),
     ))
     .context(expect("primary value expression"))
     .parse_next(i)

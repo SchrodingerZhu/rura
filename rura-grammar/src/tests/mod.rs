@@ -18,8 +18,8 @@ mod m1 {
     match n {
             C1=>  {   y  .  a  }  ,
             // FIXME: Currently don't know how to tackle this lol.
-            // FIXME: Why is this so slow on release mode?
-            // C2 ( x ) => ( ( ( (x . a) :: < T   > () )  . b )   (x)  ) . 10 ,
+            // FIXME: Why is this so slow on debug mode (~14s)?
+            C2 ( x ) => ( ( ( (x . a) :: < T   > () )  . b )   (x)  ) . 10 ,
              C3  =>  | lol | 1 + 2 * 3  ,
              C4 { z } =>  | oh | { ! z  } ,
         }
@@ -100,7 +100,7 @@ fn it_parses_if_expression() {
     match (c.expr.as_ref(), t.expr.as_ref(), e.expr.as_ref()) {
         (Expression::Constant(c), Expression::Constant(t), Expression::Constant(e)) => {
             match (c, t, e) {
-                (Constant::Bool(c), Constant::I8(t), Constant::I8(e)) => {
+                (Constant::Bool(c), Constant::ISize(t), Constant::ISize(e)) => {
                     assert!(c);
                     assert_eq!(*t, 42);
                     assert_eq!(*e, 69);

@@ -369,7 +369,6 @@ where
     R: Copy + Parser<Input<'a>, O, ContextError>,
 {
     let ops = alt((
-        "<<".value(BinOp::Shl),
         "*".value(BinOp::Mul),
         "/".value(BinOp::Div),
         "+".value(BinOp::Add),
@@ -377,13 +376,14 @@ where
         "%".value(BinOp::Rem),
         "==".value(BinOp::Eq),
         "!=".value(BinOp::Ne),
-        "<".value(BinOp::Lt),
         "<=".value(BinOp::Le),
-        ">".value(BinOp::Gt),
         ">=".value(BinOp::Ge),
         "&&".value(BinOp::And),
         "||".value(BinOp::Or),
         ">>".value(BinOp::Shr),
+        "<<".value(BinOp::Shl),
+        "<".value(BinOp::Lt),
+        ">".value(BinOp::Gt),
     ));
     infix_op(lhs, ops, rhs)
 }

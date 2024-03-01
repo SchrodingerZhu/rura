@@ -127,7 +127,7 @@ where
     F: Parser<Input<'a>, O, ContextError>,
     P: Parser<Input<'a>, O2, ContextError>,
 {
-    (prefix, skip_space(f)).map(|p| p.1)
+    (prefix, skip_space(f)).map(|x| x.1)
 }
 
 pub fn suffixed<'a, O, O2, F, S>(f: F, suffix: S) -> impl Parser<Input<'a>, O, ContextError>
@@ -319,19 +319,17 @@ pub fn constant(i: &mut Input) -> PResult<Constant> {
     .parse_next(i)
 }
 
-pub fn prefix_op<'a, O, O2, O3, P, F>(
-    prefix: P,
-    op: UnOp,
+pub fn prefix_op<'a, O, O2, F>(
+    op: impl Parser<Input<'a>, UnOp, ContextError>,
     val: F,
-) -> impl Parser<Input<'a>, O3, ContextError>
+) -> impl Parser<Input<'a>, O2, ContextError>
 where
-    O3: From<(UnOp, O, Span)>,
+    O2: From<(UnOp, O, Span)>,
     F: Parser<Input<'a>, O, ContextError>,
-    P: Parser<Input<'a>, O2, ContextError>,
 {
-    prefixed(prefix, val)
+    (op, ws_or_comment, val)
         .with_span()
-        .map(move |(v, span)| From::from((op, v, span)))
+        .map(|((op, _, v), span)| From::from((op, v, span)))
         .context(expect("prefix operation"))
 }
 
@@ -340,10 +338,8 @@ where
     O2: From<(UnOp, O, Span)>,
     F: Copy + Parser<Input<'a>, O, ContextError>,
 {
-    alt((
-        prefix_op("-", UnOp::Neg, val),
-        prefix_op("!", UnOp::Not, val),
-    ))
+    let op = alt(("-".value(UnOp::Neg), "!".value(UnOp::Not)));
+    prefix_op(op, val)
 }
 
 pub fn infix_op<'a, O, O2, L, R>(

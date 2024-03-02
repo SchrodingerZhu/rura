@@ -336,7 +336,7 @@ where
 pub fn unary<'a, O, O2, F>(val: F) -> impl Parser<Input<'a>, O2, ContextError>
 where
     O2: From<(UnOp, O, Span)>,
-    F: Copy + Parser<Input<'a>, O, ContextError>,
+    F: Parser<Input<'a>, O, ContextError>,
 {
     let op = alt(("-".value(UnOp::Neg), "!".value(UnOp::Not)));
     prefix_op(op, val)
@@ -349,8 +349,8 @@ pub fn infix_op<'a, O, O2, L, R>(
 ) -> impl Parser<Input<'a>, O2, ContextError>
 where
     O2: From<(O, BinOp, O, Span)>,
-    L: Copy + Parser<Input<'a>, O, ContextError>,
-    R: Copy + Parser<Input<'a>, O, ContextError>,
+    L: Parser<Input<'a>, O, ContextError>,
+    R: Parser<Input<'a>, O, ContextError>,
 {
     infixed(lhs, op, rhs)
         .with_span()
@@ -361,8 +361,8 @@ where
 pub fn binary<'a, O, O2, L, R>(lhs: L, rhs: R) -> impl Parser<Input<'a>, O2, ContextError>
 where
     O2: From<(O, BinOp, O, Span)>,
-    L: Copy + Parser<Input<'a>, O, ContextError>,
-    R: Copy + Parser<Input<'a>, O, ContextError>,
+    L: Parser<Input<'a>, O, ContextError>,
+    R: Parser<Input<'a>, O, ContextError>,
 {
     let ops = alt((
         "*".value(BinOp::Mul),

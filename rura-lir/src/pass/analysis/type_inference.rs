@@ -58,6 +58,8 @@ pub enum Error {
     UnknownOperandType(usize),
     #[error("{} is not a valid type to appear at Rura's function interface", PrettyPrint::new(&**.0))]
     InvalidInterfaceType(Box<LirType>),
+    #[error("{} is not a valid type to appear at Rura's inductive type arguments", PrettyPrint::new(&**.0))]
+    InvalidTypeArgument(Box<LirType>),
     #[error("closure captures an operand %{0} of an incompatible type {}", PrettyPrint::new(&**.1))]
     IncompatibleCapture(usize, Box<LirType>),
     #[error("operand %{0} contains unknown type variable in its type {}", PrettyPrint::new(&**.1))]
@@ -139,6 +141,14 @@ impl<'a> TypeInferenceContext<'a> {
         self.errors.push((
             self.context.clone().into(),
             Error::InvalidInterfaceType(Box::new(arg_type)),
+        ));
+        // could continue
+    }
+
+    pub fn invalid_type_argument(&mut self, arg_type: LirType) {
+        self.errors.push((
+            self.context.clone().into(),
+            Error::InvalidTypeArgument(Box::new(arg_type)),
         ));
         // could continue
     }
@@ -412,7 +422,22 @@ impl LirVisitor for TypeInference<'_> {
                     }
                 }
             }
-            Lir::CtorCall(call) => todo!("figure out how to look up inductive type"),
+            Lir::CtorCall(call) => {
+                if !self.dictionary.inductives.contains_key(&call.type_name) {
+                    context.errors.push((
+                        context.context.clone().into(),
+                        Error::UnknownInductive(call.type_name.clone(), call.ctor.clone()),
+                    ));
+                    return;
+                }
+                for (i, ty) in call.type_params.iter().enumerate() {
+                    if !ty.is_materializable() {
+                        context.invalid_type_argument(ty.clone());
+                    }
+                }
+                let ty = LirType::Object(call.type_name.clone(), call.type_params.clone());
+                context.set_type(call.result, ty);
+            }
             Lir::InductiveElimination { .. } => unreachable!(),
             Lir::Return { value } => {
                 let ty = get_type!(context, *value);

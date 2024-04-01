@@ -38,7 +38,7 @@ rura_internal_macros::generate_from_impls!();
 
 pub struct Thunk<F, P: PartialParams, R>
 where
-    F: Fn(P::Full) -> R + Clone,
+    F: FnOnce(P::Full) -> R + Clone,
 {
     code: F,
     params: P,
@@ -46,7 +46,7 @@ where
 
 impl<P: PartialParams + Clone, R, F> Clone for Thunk<F, P, R>
 where
-    F: Fn(P::Full) -> R + Clone,
+    F: FnOnce(P::Full) -> R + Clone,
 {
     fn clone(&self) -> Self {
         Thunk {
@@ -64,7 +64,7 @@ pub trait BoxedClosure<P: Params, R> {
 
 impl<F, P, R> BoxedClosure<P::Pending, R> for Thunk<F, P, R>
 where
-    F: Fn(P::Full) -> R + Clone + 'static,
+    F: FnOnce(P::Full) -> R + Clone + 'static,
     P: PartialParams + Clone + 'static,
     R: 'static,
 {
